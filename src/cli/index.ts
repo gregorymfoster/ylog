@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { ConfigManager } from '../core/config.js';
 import { CodeExplorer } from '../core/explorer.js';
+import { SessionManager } from '../core/session.js';
 
 // Get package.json for version
 const packagePath = join(__dirname, '../../package.json');
@@ -126,13 +127,9 @@ program
         console.log(`🔥 High complexity areas: ${highComplexity}`);
         console.log(`📈 Recently changed areas: ${recentlyChanged}`);
         
-        // TODO: Start interactive session
-        console.log(chalk.cyan('\n🚧 Interactive session implementation coming next...'));
-        console.log('This will include:');
-        console.log('• AI-powered question generation');
-        console.log('• Multiple choice + freeform responses');
-        console.log('• Real-time knowledge synthesis');
-        console.log('• Progress tracking and gamification');
+        // Start interactive session
+        const sessionManager = new SessionManager(config);
+        await sessionManager.runInteractiveSession();
         
       } catch (error) {
         spinner.fail(`Exploration failed: ${error}`);
@@ -196,6 +193,33 @@ program
     }
   });
 
+// Resume command - resume a previous session
+program
+  .command('resume')
+  .description('Resume a previous knowledge mining session')
+  .argument('[sessionId]', 'Session ID to resume')
+  .option('-c, --config <path>', 'Configuration file path')
+  .action(async (sessionId, options) => {
+    try {
+      const { default: chalk } = await import('chalk');
+      
+      const config = await ConfigManager.loadConfig(options.config);
+      const sessionManager = new SessionManager(config);
+      
+      if (sessionId) {
+        await sessionManager.resumeSession(sessionId);
+      } else {
+        console.log(chalk.yellow('❓ No session ID provided'));
+        console.log('Usage: ylog2 resume <sessionId>');
+        console.log('       ylog2 resume sess_abc123');
+      }
+      
+    } catch (error) {
+      console.error('❌ Resume failed:', error);
+      process.exit(1);
+    }
+  });
+
 // Status command - show current knowledge state
 program
   .command('status')
@@ -205,16 +229,26 @@ program
     try {
       const { default: chalk } = await import('chalk');
       
-      console.log(chalk.blue('📊 ylog2 Status'));
+      const config = await ConfigManager.loadConfig(options.config);
+      const sessionManager = new SessionManager(config);
+      
+      console.log(chalk.blue('📊 ylog2 Knowledge Mining Status'));
+      console.log(chalk.gray(`Repository: ${config.gitRepo}`));
       console.log();
       
-      // TODO: Implement status display
-      console.log(chalk.yellow('🚧 Status implementation coming soon...'));
-      console.log('This will show:');
-      console.log('• Knowledge coverage by area');
-      console.log('• Recent Q&A sessions');
-      console.log('• Generated insights and decisions');
-      console.log('• Synthesis confidence scores');
+      // Get session statistics
+      const stats = sessionManager.getSessionStats();
+      
+      console.log(chalk.bold('📈 Session Statistics:'));
+      console.log(`Total sessions: ${stats.totalSessions}`);
+      console.log(`Total questions answered: ${stats.totalQuestions}`);
+      console.log(`Average session length: ${stats.averageSessionLength} minutes`);
+      console.log();
+      
+      console.log(chalk.bold('🎯 Quick Actions:'));
+      console.log('• Run "ylog2" to start a new session');
+      console.log('• Run "ylog2 explore" to analyze your codebase');
+      console.log('• Run "ylog2 resume <sessionId>" to continue a session');
       
     } catch (error) {
       console.error('❌ Status failed:', error);

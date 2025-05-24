@@ -1,0 +1,440 @@
+/**
+ * Session manager for interactive knowledge mining
+ */
+
+import { randomUUID } from 'crypto'
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs'
+import { join } from 'path'
+import { CodeExplorer } from './explorer.js'
+import { QuestionGenerator } from '../agents/question-generator.js'
+import { AnswerProcessor } from '../agents/answer-processor.js'
+import { InteractiveSession } from '../cli/interactive.js'
+import { OutputFormatter } from '../utils/formatting.js'
+import {
+  SessionContext,
+  UserPreferences,
+  KnowledgeProgress,
+  CodeArea,
+  QuestionTarget,
+  ResolvedYlog2Config
+} from '../types/index.js'
+import {
+  Question,
+  UserResponse,
+  ProcessedAnswer
+} from '../types/questions.js'
+
+export class SessionManager {
+  private config: ResolvedYlog2Config
+  private explorer: CodeExplorer
+  private questionGenerator: QuestionGenerator
+  private answerProcessor: AnswerProcessor
+  private formatter: OutputFormatter
+  private sessionData: Map<string, any> = new Map()
+
+  constructor(config: ResolvedYlog2Config) {
+    this.config = config
+    this.explorer = new CodeExplorer(config)
+    this.questionGenerator = new QuestionGenerator(config)
+    this.answerProcessor = new AnswerProcessor(config)
+    this.formatter = new OutputFormatter()
+    
+    // Ensure data directory exists
+    this.ensureDataDirectory()
+  }
+
+  /**
+   * Create a new interactive session
+   */
+  async createSession(preferences?: Partial<UserPreferences>): Promise<SessionContext> {
+    const sessionId = this.generateSessionId()
+    const startTime = new Date()
+    
+    // Set up user preferences
+    const userPreferences: UserPreferences = {
+      sessionLength: preferences?.sessionLength || this.config.session.defaultLength,
+      questionTypes: preferences?.questionTypes || this.config.questions.questionTypes,
+      focusAreas: preferences?.focusAreas || [],
+      skipPatterns: preferences?.skipPatterns || []
+    }
+    
+    // Initialize knowledge progress
+    const knowledgeProgress: KnowledgeProgress = {
+      totalAreas: 0,
+      areasWithContext: 0,
+      questionsAnswered: 0,
+      insightsGenerated: 0,
+      coveragePercentage: 0
+    }
+    
+    const context: SessionContext = {
+      sessionId,
+      startTime,
+      questionsAnswered: 0,
+      areasExplored: [],
+      userPreferences,
+      knowledgeProgress
+    }
+    
+    // Save initial session state
+    await this.saveSession(context)
+    
+    return context
+  }
+
+  /**
+   * Run a complete interactive session
+   */
+  async runInteractiveSession(
+    sessionContext?: SessionContext
+  ): Promise<void> {
+    let context = sessionContext
+    
+    // Create new session if none provided
+    if (!context) {
+      context = await this.createSession()
+    }
+    
+    const interactive = new InteractiveSession(context)
+    
+    try {
+      // Show welcome and get user preferences
+      interactive.showWelcome()
+      
+      if (!sessionContext) {
+        // Get session preferences from user
+        const sessionLength = await interactive.askSessionLength()
+        context.userPreferences.sessionLength = sessionLength
+        
+        // Explore codebase first
+        interactive.showLoading('Exploring your codebase')
+        const areas = await this.explorer.exploreCodebase()
+        interactive.clearLoading()
+        
+        if (areas.length === 0) {
+          interactive.showError('No areas found to explore')
+          return
+        }
+        
+        context.knowledgeProgress.totalAreas = areas.length
+        
+        // Let user choose focus areas
+        const topAreas = areas.slice(0, 15).map(a => a.path)
+        const focusAreas = await interactive.askFocusAreas(topAreas)
+        context.userPreferences.focusAreas = focusAreas
+        
+        interactive.showTips()
+        await interactive.pause('Ready to start? Press Enter...')
+      }
+      
+      // Main session loop
+      await this.runSessionLoop(context, interactive)
+      
+      // Show session summary
+      const sessionDuration = Date.now() - context.startTime.getTime()
+      interactive.showSessionSummary(
+        context.questionsAnswered,
+        sessionDuration / 1000,
+        context.areasExplored,
+        context.knowledgeProgress.insightsGenerated
+      )
+      
+      interactive.showGoodbye()
+      
+    } catch (error) {
+      if (error.message === 'USER_INTERRUPTED') {
+        const action = await interactive.handleInterruption()
+        
+        switch (action) {
+          case 'save':
+            await this.saveSession(context)
+            console.log('✅ Session saved. Resume with: ylog2 resume')
+            break
+          case 'discard':
+            console.log('🗑️  Session discarded')
+            break
+          case 'continue':
+            await this.runInteractiveSession(context)
+            break
+        }
+      } else {
+        interactive.showError(`Session failed: ${error.message}`)
+      }
+    }
+  }
+
+  /**
+   * Main session loop - ask questions and process answers
+   */
+  private async runSessionLoop(
+    context: SessionContext,
+    interactive: InteractiveSession
+  ): Promise<void> {
+    const maxQuestions = this.getMaxQuestions(context.userPreferences.sessionLength)
+    
+    while (context.questionsAnswered < maxQuestions) {
+      try {
+        // Get question targets
+        const targets = await this.getQuestionTargets(context)
+        
+        if (targets.length === 0) {
+          interactive.showWarning('No more areas to explore')
+          break
+        }
+        
+        // Generate question
+        interactive.showLoading('Generating question')
+        const question = await this.questionGenerator.generateQuestion(targets[0])
+        interactive.clearLoading()
+        
+        // Present question and get response
+        const response = await interactive.presentQuestion(question)
+        
+        // Process answer in parallel with user interaction
+        const [processedAnswer] = await Promise.all([
+          this.answerProcessor.processResponse(response),
+          this.updateSessionProgress(context, question, response)
+        ])
+        
+        // Show impact and progress
+        this.showProgressUpdate(interactive, context, processedAnswer)
+        
+        // Save progress
+        await this.saveSession(context)
+        
+        // Check if user wants to continue (for quick sessions)
+        if (context.userPreferences.sessionLength === 'quick' && 
+            context.questionsAnswered >= 3) {
+          const shouldContinue = await interactive.askToContinue()
+          if (!shouldContinue) break
+        }
+        
+      } catch (error) {
+        if (error.message === 'USER_INTERRUPTED') {
+          throw error
+        }
+        interactive.showError(`Question failed: ${error.message}`)
+        // Continue with next question
+      }
+    }
+  }
+
+  /**
+   * Get question targets based on session context
+   */
+  private async getQuestionTargets(context: SessionContext): Promise<QuestionTarget[]> {
+    // Explore areas if we haven't yet
+    const areas = await this.explorer.exploreCodebase()
+    
+    // Filter areas based on user preferences
+    let filteredAreas = areas
+    
+    if (context.userPreferences.focusAreas.length > 0) {
+      filteredAreas = areas.filter(area => 
+        context.userPreferences.focusAreas.some(focus => 
+          area.path.includes(focus)
+        )
+      )
+    }
+    
+    // Exclude areas we've already explored extensively
+    filteredAreas = filteredAreas.filter(area => 
+      !context.areasExplored.includes(area.path)
+    )
+    
+    if (filteredAreas.length === 0) {
+      // If we've exhausted focus areas, explore others
+      filteredAreas = areas.filter(area => 
+        !context.areasExplored.includes(area.path)
+      )
+    }
+    
+    // Analyze top areas and get question targets
+    const topAreas = filteredAreas.slice(0, 5)
+    const allTargets: QuestionTarget[] = []
+    
+    for (const area of topAreas) {
+      try {
+        const analysis = await this.explorer.analyzeArea(area)
+        const targets = await this.explorer.identifyQuestionableCode(analysis)
+        allTargets.push(...targets)
+      } catch (error) {
+        console.warn(`Failed to analyze area ${area.path}: ${error}`)
+      }
+    }
+    
+    // Sort by priority and return top targets
+    return allTargets
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, 10)
+  }
+
+  /**
+   * Update session progress after answering a question
+   */
+  private async updateSessionProgress(
+    context: SessionContext,
+    question: Question,
+    response: UserResponse
+  ): Promise<void> {
+    context.questionsAnswered++
+    
+    // Add area to explored list
+    const areaPath = question.target.area.path
+    if (!context.areasExplored.includes(areaPath)) {
+      context.areasExplored.push(areaPath)
+    }
+    
+    context.currentArea = question.target.area
+    
+    // Update knowledge progress
+    context.knowledgeProgress.questionsAnswered = context.questionsAnswered
+    context.knowledgeProgress.areasWithContext = context.areasExplored.length
+    
+    // Calculate coverage percentage
+    if (context.knowledgeProgress.totalAreas > 0) {
+      context.knowledgeProgress.coveragePercentage = 
+        (context.areasExplored.length / context.knowledgeProgress.totalAreas) * 100
+    }
+    
+    // Increment insights (simplified - real implementation would track actual insights)
+    context.knowledgeProgress.insightsGenerated++
+  }
+
+  /**
+   * Show progress update to user
+   */
+  private showProgressUpdate(
+    interactive: InteractiveSession,
+    context: SessionContext,
+    answer: ProcessedAnswer
+  ): void {
+    // Show impact
+    const area = context.currentArea?.path || 'Unknown'
+    const improvement = Math.min(Math.floor(answer.confidence * 50), 25)
+    interactive.showImpact(area, improvement)
+    
+    // Show celebration for milestones
+    if (context.questionsAnswered === 5) {
+      interactive.showCelebration('First 5 questions completed! 🎉')
+    } else if (context.questionsAnswered === 10) {
+      interactive.showCelebration('10 questions milestone! You\'re building great knowledge! 🚀')
+    } else if (context.questionsAnswered % 10 === 0) {
+      interactive.showCelebration(`${context.questionsAnswered} questions! Amazing dedication! ⭐`)
+    }
+    
+    // Show progress periodically
+    if (context.questionsAnswered % 3 === 0) {
+      interactive.showKnowledgeProgress(context.knowledgeProgress)
+    }
+  }
+
+  /**
+   * Save session state
+   */
+  async saveSession(context: SessionContext): Promise<void> {
+    const sessionFile = join(this.config.outputDir, 'sessions', `${context.sessionId}.json`)
+    
+    try {
+      writeFileSync(sessionFile, JSON.stringify(context, null, 2))
+    } catch (error) {
+      console.warn(`Failed to save session: ${error}`)
+    }
+  }
+
+  /**
+   * Load session state
+   */
+  async loadSession(sessionId: string): Promise<SessionContext | null> {
+    const sessionFile = join(this.config.outputDir, 'sessions', `${sessionId}.json`)
+    
+    if (!existsSync(sessionFile)) {
+      return null
+    }
+    
+    try {
+      const content = readFileSync(sessionFile, 'utf-8')
+      const context = JSON.parse(content)
+      
+      // Convert date strings back to Date objects
+      context.startTime = new Date(context.startTime)
+      
+      return context
+    } catch (error) {
+      console.warn(`Failed to load session: ${error}`)
+      return null
+    }
+  }
+
+  /**
+   * Resume an existing session
+   */
+  async resumeSession(sessionId: string): Promise<void> {
+    const context = await this.loadSession(sessionId)
+    
+    if (!context) {
+      throw new Error(`Session ${sessionId} not found`)
+    }
+    
+    console.log(`🔄 Resuming session ${sessionId}...`)
+    console.log(`📊 Progress: ${context.questionsAnswered} questions, ${context.areasExplored.length} areas`)
+    console.log()
+    
+    await this.runInteractiveSession(context)
+  }
+
+  /**
+   * Get max questions based on session length
+   */
+  private getMaxQuestions(sessionLength: 'quick' | 'medium' | 'deep'): number {
+    switch (sessionLength) {
+      case 'quick': return 5
+      case 'medium': return 10
+      case 'deep': return 25
+      default: return 10
+    }
+  }
+
+  /**
+   * Generate unique session ID
+   */
+  private generateSessionId(): string {
+    const timestamp = Date.now().toString(36)
+    const random = Math.random().toString(36).substring(2, 8)
+    return `sess_${timestamp}_${random}`
+  }
+
+  /**
+   * Ensure data directory structure exists
+   */
+  private ensureDataDirectory(): void {
+    const dirs = [
+      this.config.outputDir,
+      join(this.config.outputDir, 'sessions'),
+      join(this.config.outputDir, 'knowledge'),
+      join(this.config.outputDir, 'cache')
+    ]
+    
+    for (const dir of dirs) {
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+      }
+    }
+  }
+
+  /**
+   * Get session statistics
+   */
+  getSessionStats(): {
+    totalSessions: number
+    totalQuestions: number
+    averageSessionLength: number
+  } {
+    // TODO: Implement actual stats tracking
+    return {
+      totalSessions: 0,
+      totalQuestions: 0,
+      averageSessionLength: 0
+    }
+  }
+}
