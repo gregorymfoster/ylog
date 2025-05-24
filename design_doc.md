@@ -8,7 +8,7 @@ Principle: Keep it stupid-simple today so we can extend tomorrow.
 
 1 Overview
 
-ylog is a tiny, batteries-included TypeScript CLI that creates "Institutional Memory" for dev teams by converting GitHub PR history into discoverable context. 1. Auto-detect GitHub repo from git remote. 2. Fetch raw PR metadata via the official gh CLI. 3. Summarise each PR with AI (Ollama or Anthropic via Vercel AI SDK). 4. Store structured data in SQLite database and generate contextual .ylog files throughout the codebase for easy discovery.
+ylog is a tiny, batteries-included TypeScript CLI that creates "Institutional Memory" for dev teams by converting GitHub PR history into discoverable context. 1. Auto-detect GitHub repo from git remote. 2. Fetch raw PR metadata via GitHub API (Octokit) with smart token authentication. 3. Summarise each PR with AI (Ollama or Anthropic via Vercel AI SDK). 4. Store structured data in SQLite database and generate contextual .ylog files throughout the codebase for easy discovery.
 
 Raw PR data is cached locally outside the repo. The tool generates both structured data (SQLite) for rich querying and contextual files (.ylog) for easy discovery while browsing code. Tool is idempotent, restart-safe, and can be run from CI or a laptop.
 
@@ -47,7 +47,7 @@ Outcome: ./ylog/prs.db grows; contextual .ylog files appear near relevant code; 
 cli -> core pipeline
 |
 v
-ghClient -> cacheManager -> aiClient -> sqliteStorage -> contextFileGenerator
+githubClient (Octokit) -> cacheManager -> aiClient -> sqliteStorage -> contextFileGenerator
 ```
 
 All modules are pure functions; side-effects are isolated at boundaries.

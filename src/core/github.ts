@@ -1,125 +1,123 @@
 /**
- * GitHub CLI integration for fetching PR data
+ * GitHub API integration using Octokit
  */
 
-import { execSync } from 'child_process';
+import { Octokit } from '@octokit/rest';
 import type { RawPR, RawPRList } from '../types/github.js';
 import type { ResolvedYlogConfig } from '../types/config.js';
 
 export class GitHubClient {
+  private octokit: Octokit;
   private config: ResolvedYlogConfig;
+  private owner: string;
+  private repo: string;
   private requestCount = 0;
-  private lastRequestTime = 0;
 
   constructor(config: ResolvedYlogConfig) {
     this.config = config;
+    
+    // Parse owner/repo from config
+    const [owner, repo] = config.github.repo.split('/');
+    if (!owner || !repo) {
+      throw new Error(`Invalid repository format: ${config.github.repo}. Expected: owner/repo`);
+    }
+    this.owner = owner;
+    this.repo = repo;
+
+    // Initialize Octokit with token and rate limiting
+    this.octokit = new Octokit({
+      auth: config.github.token,
+      throttle: {
+        onRateLimit: (retryAfter: number, _options: any) => {
+          console.warn(`Rate limit hit, retrying after ${retryAfter} seconds...`);
+          return true; // Retry
+        },
+        onSecondaryRateLimit: (retryAfter: number, _options: any) => {
+          console.warn(`Secondary rate limit hit, retrying after ${retryAfter} seconds...`);
+          return true; // Retry
+        },
+      },
+    });
   }
 
   /**
-   * Check if gh CLI is available and authenticated
+   * Check if authentication is working
    */
   async checkAuth(): Promise<void> {
     try {
-      execSync('gh auth status', { stdio: 'pipe' });
-    } catch {
-      throw new Error('GitHub CLI not authenticated. Run "gh auth login" first.');
-    }
-  }
-
-  /**
-   * Rate limiting based on config.github.throttleRpm
-   */
-  private async rateLimit(): Promise<void> {
-    const minInterval = (60 * 1000) / this.config.github.throttleRpm; // ms between requests
-    const now = Date.now();
-    const timeSinceLastRequest = now - this.lastRequestTime;
-    
-    if (timeSinceLastRequest < minInterval) {
-      const waitTime = minInterval - timeSinceLastRequest;
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-    }
-    
-    this.lastRequestTime = Date.now();
-    this.requestCount++;
-  }
-
-  /**
-   * Execute gh CLI command with error handling and rate limiting
-   */
-  private async execGH(command: string): Promise<string> {
-    await this.rateLimit();
-    
-    try {
-      const result = execSync(`gh ${command}`, {
-        encoding: 'utf8',
-        stdio: 'pipe',
-        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-      });
-      return result.trim();
+      await this.octokit.rest.users.getAuthenticated();
     } catch (error: any) {
-      // Check for rate limiting
-      if (error.message?.includes('rate limit')) {
-        console.warn('GitHub rate limit hit, waiting 60 seconds...');
-        await new Promise(resolve => setTimeout(resolve, 60000));
-        return this.execGH(command); // Retry
-      }
-      
-      // Check for network issues
-      if (error.message?.includes('network') || error.message?.includes('timeout')) {
-        console.warn('Network issue, retrying in 5 seconds...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        return this.execGH(command); // Retry once
-      }
-      
-      throw new Error(`GitHub CLI error: ${error.message}`);
+      throw new Error(`GitHub authentication failed: ${error.message}`);
     }
   }
 
   /**
-   * Fetch list of merged PRs with pagination
+   * Fetch list of PRs with pagination
    */
   async fetchPRList(options: {
     limit?: number;
     since?: string; // ISO date string
-    state?: 'open' | 'closed' | 'merged';
+    state?: 'open' | 'closed' | 'all';
   } = {}): Promise<RawPRList> {
-    const { limit = 100, since, state = 'merged' } = options;
+    const { limit = 100, since, state = 'closed' } = options;
     
-    let command = `pr list --repo ${this.config.github.repo} --state ${state} --json number,title,author,createdAt,mergedAt,url --limit ${limit}`;
-    
-    if (since) {
-      // gh CLI doesn't support since filter directly, we'll filter after fetching
-      console.warn('Date filtering will be applied after fetching PRs');
-    }
-
-    const output = await this.execGH(command);
-    const prs = JSON.parse(output) as Array<{
+    const prs: Array<{
       number: number;
       title: string;
       author: { login: string };
       createdAt: string;
       mergedAt: string | null;
       url: string;
-    }>;
+    }> = [];
 
-    // Apply date filtering if specified
-    let filteredPRs = prs;
-    if (since) {
-      const sinceDate = new Date(since);
-      filteredPRs = prs.filter(pr => new Date(pr.createdAt) >= sinceDate);
+    // Use pagination to fetch all PRs
+    const iterator = this.octokit.paginate.iterator(
+      this.octokit.rest.pulls.list,
+      {
+        owner: this.owner,
+        repo: this.repo,
+        state,
+        sort: 'created',
+        direction: 'desc',
+        per_page: Math.min(limit, 100),
+      }
+    );
+
+    let fetched = 0;
+    for await (const { data } of iterator) {
+      for (const pr of data) {
+        // Skip non-merged PRs if we want merged ones
+        if (state === 'closed' && !pr.merged_at) continue;
+
+        // Apply date filtering - skip PRs that are too old
+        if (since && new Date(pr.created_at) < new Date(since)) {
+          continue;
+        }
+
+        prs.push({
+          number: pr.number,
+          title: pr.title,
+          author: { login: pr.user?.login || 'unknown' },
+          createdAt: pr.created_at,
+          mergedAt: pr.merged_at,
+          url: pr.html_url,
+        });
+
+        fetched++;
+        if (fetched >= limit) {
+          return {
+            prs,
+            total: prs.length,
+            hasMore: true,
+          };
+        }
+      }
     }
 
     return {
-      prs: filteredPRs.map(pr => ({
-        number: pr.number,
-        title: pr.title,
-        author: pr.author,
-        createdAt: pr.createdAt,
-        mergedAt: pr.mergedAt,
-        url: pr.url,
-      })),
-      total: filteredPRs.length,
-      hasMore: prs.length === limit, // Approximation
+      prs,
+      total: prs.length,
+      hasMore: false,
     };
   }
 
@@ -127,56 +125,60 @@ export class GitHubClient {
    * Fetch detailed PR information including files, reviews, etc.
    */
   async fetchPRDetails(prNumber: number): Promise<RawPR> {
-    const command = `pr view ${prNumber} --repo ${this.config.github.repo} --json number,title,body,author,createdAt,mergedAt,baseRefName,headRefName,url,additions,deletions,changedFiles,files,reviews,labels`;
-    
-    const output = await this.execGH(command);
-    const pr = JSON.parse(output);
+    this.requestCount++;
 
-    // Fetch file changes separately if not included
-    let files = pr.files || [];
-    if (!files.length && pr.changedFiles > 0) {
-      try {
-        const filesCommand = `pr diff ${prNumber} --repo ${this.config.github.repo} --name-only`;
-        const filesOutput = await this.execGH(filesCommand);
-        files = filesOutput.split('\n').filter(Boolean).map((path: string) => ({
-          path,
-          additions: 0,
-          deletions: 0,
-          status: 'modified',
-          previous_filename: null,
-        }));
-      } catch {
-        // File details not critical, continue without them
-      }
+    try {
+      // Fetch PR details
+      const { data: pr } = await this.octokit.rest.pulls.get({
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: prNumber,
+      });
+
+      // Fetch PR files
+      const { data: files } = await this.octokit.rest.pulls.listFiles({
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: prNumber,
+      });
+
+      // Fetch PR reviews
+      const { data: reviews } = await this.octokit.rest.pulls.listReviews({
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: prNumber,
+      });
+
+      return {
+        number: pr.number,
+        title: pr.title,
+        body: pr.body || '',
+        author: { login: pr.user?.login || 'unknown' },
+        createdAt: pr.created_at,
+        mergedAt: pr.merged_at,
+        baseRefName: pr.base.ref,
+        headRefName: pr.head.ref,
+        url: pr.html_url,
+        additions: pr.additions || 0,
+        deletions: pr.deletions || 0,
+        changedFiles: pr.changed_files || files.length,
+        files: files.map(file => ({
+          path: file.filename,
+          additions: file.additions,
+          deletions: file.deletions,
+          status: file.status as 'added' | 'removed' | 'modified' | 'renamed',
+          previous_filename: file.previous_filename || null,
+        })),
+        reviews: reviews.map(review => ({
+          author: review.user?.login || 'unknown',
+          state: review.state as 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED',
+          submittedAt: review.submitted_at || (review as any).updated_at,
+        })),
+        labels: pr.labels?.map(label => typeof label === 'string' ? label : label.name) || [],
+      };
+    } catch (error: any) {
+      throw new Error(`Failed to fetch PR #${prNumber}: ${error.message}`);
     }
-
-    return {
-      number: pr.number,
-      title: pr.title,
-      body: pr.body || '',
-      author: pr.author,
-      createdAt: pr.createdAt,
-      mergedAt: pr.mergedAt,
-      baseRefName: pr.baseRefName,
-      headRefName: pr.headRefName,
-      url: pr.url,
-      additions: pr.additions || 0,
-      deletions: pr.deletions || 0,
-      changedFiles: pr.changedFiles || files.length,
-      files: files.map((file: any) => ({
-        path: file.path,
-        additions: file.additions || 0,
-        deletions: file.deletions || 0,
-        status: file.status || 'modified',
-        previous_filename: file.previous_filename || null,
-      })),
-      reviews: (pr.reviews || []).map((review: any) => ({
-        author: review.author?.login || 'unknown',
-        state: review.state,
-        submittedAt: review.submittedAt,
-      })),
-      labels: (pr.labels || []).map((label: any) => label.name),
-    };
   }
 
   /**
@@ -197,25 +199,33 @@ export class GitHubClient {
     
     for (let i = 0; i < prList.prs.length; i += batchSize) {
       const batch = prList.prs.slice(i, i + batchSize);
-      const detailedPRs: RawPR[] = [];
       
-      for (const prSummary of batch) {
+      // Process batch concurrently but with controlled concurrency
+      const promises = batch.map(async (prSummary) => {
         try {
           const prDetails = await this.fetchPRDetails(prSummary.number);
-          detailedPRs.push(prDetails);
           processed++;
           
           if (onProgress) {
             onProgress(processed, total);
           }
+          
+          return prDetails;
         } catch (error) {
           console.warn(`Failed to fetch PR #${prSummary.number}: ${error}`);
-          continue;
+          processed++;
+          if (onProgress) {
+            onProgress(processed, total);
+          }
+          return null;
         }
-      }
+      });
       
-      if (detailedPRs.length > 0) {
-        yield detailedPRs;
+      const results = await Promise.all(promises);
+      const validPRs = results.filter((pr): pr is RawPR => pr !== null);
+      
+      if (validPRs.length > 0) {
+        yield validPRs;
       }
     }
   }
@@ -229,14 +239,15 @@ export class GitHubClient {
     defaultBranch: string;
     description: string;
   }> {
-    const command = `repo view ${this.config.github.repo} --json name,nameWithOwner,defaultBranchRef,description`;
-    const output = await this.execGH(command);
-    const repo = JSON.parse(output);
+    const { data: repo } = await this.octokit.rest.repos.get({
+      owner: this.owner,
+      repo: this.repo,
+    });
     
     return {
       name: repo.name,
-      fullName: repo.nameWithOwner,
-      defaultBranch: repo.defaultBranchRef?.name || 'main',
+      fullName: repo.full_name,
+      defaultBranch: repo.default_branch,
       description: repo.description || '',
     };
   }
@@ -244,10 +255,9 @@ export class GitHubClient {
   /**
    * Get request statistics
    */
-  getStats(): { requestCount: number; lastRequestTime: number } {
+  getStats(): { requestCount: number; rateLimit?: any } {
     return {
       requestCount: this.requestCount,
-      lastRequestTime: this.lastRequestTime,
     };
   }
 
@@ -256,6 +266,5 @@ export class GitHubClient {
    */
   resetStats(): void {
     this.requestCount = 0;
-    this.lastRequestTime = 0;
   }
 }

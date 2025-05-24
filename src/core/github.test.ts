@@ -1,10 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ResolvedYlogConfig } from '../types/config.js';
 
-// Mock execSync before importing GitHubClient
-const mockExecSync = vi.fn();
-vi.mock('child_process', () => ({
-  execSync: mockExecSync
+// Mock Octokit before importing GitHubClient
+const mockOctokit = {
+  rest: {
+    users: {
+      getAuthenticated: vi.fn(),
+    },
+    pulls: {
+      list: vi.fn(),
+      get: vi.fn(),
+      listFiles: vi.fn(),
+      listReviews: vi.fn(),
+    },
+    repos: {
+      get: vi.fn(),
+    },
+  },
+  paginate: {
+    iterator: vi.fn(),
+  },
+};
+
+vi.mock('@octokit/rest', () => ({
+  Octokit: vi.fn(() => mockOctokit),
 }));
 
 // Import after mocking
@@ -18,7 +37,8 @@ describe('GitHubClient', () => {
     mockConfig = {
       github: {
         repo: 'owner/test-repo',
-        throttleRpm: 60, // 1 request per second for testing
+        token: 'ghp_test_token',
+        throttleRpm: 60,
       },
       ai: {
         provider: 'ollama',
@@ -33,24 +53,39 @@ describe('GitHubClient', () => {
       diffMaxBytes: 1000000,
     };
 
+    // Reset all mocks
+    vi.clearAllMocks();
+
     client = new GitHubClient(mockConfig);
-    mockExecSync.mockClear();
+  });
+
+  describe('constructor', () => {
+    it('should parse owner/repo correctly', () => {
+      expect(() => new GitHubClient(mockConfig)).not.toThrow();
+    });
+
+    it('should throw error for invalid repo format', () => {
+      const invalidConfig = {
+        ...mockConfig,
+        github: { ...mockConfig.github, repo: 'invalid-repo' },
+      };
+      
+      expect(() => new GitHubClient(invalidConfig)).toThrow('Invalid repository format');
+    });
   });
 
   describe('checkAuth', () => {
-    it('should succeed when gh CLI is authenticated', async () => {
-      mockExecSync.mockReturnValue('Logged in to github.com as user');
+    it('should succeed when Octokit authentication works', async () => {
+      mockOctokit.rest.users.getAuthenticated.mockResolvedValue({ data: { login: 'testuser' } });
       
       await expect(client.checkAuth()).resolves.toBeUndefined();
-      expect(mockExecSync).toHaveBeenCalledWith('gh auth status', { stdio: 'pipe' });
+      expect(mockOctokit.rest.users.getAuthenticated).toHaveBeenCalled();
     });
 
-    it('should throw error when gh CLI is not authenticated', async () => {
-      mockExecSync.mockImplementation(() => {
-        throw new Error('Not logged in');
-      });
+    it('should throw error when authentication fails', async () => {
+      mockOctokit.rest.users.getAuthenticated.mockRejectedValue(new Error('Bad credentials'));
       
-      await expect(client.checkAuth()).rejects.toThrow('GitHub CLI not authenticated');
+      await expect(client.checkAuth()).rejects.toThrow('GitHub authentication failed');
     });
   });
 
@@ -60,23 +95,33 @@ describe('GitHubClient', () => {
         {
           number: 123,
           title: 'Test PR',
-          author: { login: 'testuser' },
-          createdAt: '2024-01-01T00:00:00Z',
-          mergedAt: '2024-01-02T00:00:00Z',
-          url: 'https://github.com/owner/test-repo/pull/123'
-        }
+          user: { login: 'testuser' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/test-repo/pull/123',
+        },
       ];
-      
-      mockExecSync.mockReturnValue(JSON.stringify(mockPRs));
+
+      // Mock paginate iterator
+      mockOctokit.paginate.iterator.mockImplementation(async function* () {
+        yield { data: mockPRs };
+      });
       
       const result = await client.fetchPRList();
       
       expect(result.prs).toHaveLength(1);
       expect(result.prs[0].number).toBe(123);
       expect(result.prs[0].title).toBe('Test PR');
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'gh pr list --repo owner/test-repo --state merged --json number,title,author,createdAt,mergedAt,url --limit 100',
-        expect.any(Object)
+      expect(mockOctokit.paginate.iterator).toHaveBeenCalledWith(
+        mockOctokit.rest.pulls.list,
+        {
+          owner: 'owner',
+          repo: 'test-repo',
+          state: 'closed',
+          sort: 'created',
+          direction: 'desc',
+          per_page: 100,
+        }
       );
     });
 
@@ -85,27 +130,59 @@ describe('GitHubClient', () => {
         {
           number: 123,
           title: 'Old PR',
-          author: { login: 'testuser' },
-          createdAt: '2023-01-01T00:00:00Z',
-          mergedAt: '2023-01-02T00:00:00Z',
-          url: 'https://github.com/owner/test-repo/pull/123'
+          user: { login: 'testuser' },
+          created_at: '2023-01-01T00:00:00Z',
+          merged_at: '2023-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/test-repo/pull/123',
         },
         {
           number: 124,
           title: 'New PR',
-          author: { login: 'testuser' },
-          createdAt: '2024-01-01T00:00:00Z',
-          mergedAt: '2024-01-02T00:00:00Z',
-          url: 'https://github.com/owner/test-repo/pull/124'
-        }
+          user: { login: 'testuser' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/test-repo/pull/124',
+        },
       ];
-      
-      mockExecSync.mockReturnValue(JSON.stringify(mockPRs));
+
+      mockOctokit.paginate.iterator.mockImplementation(async function* () {
+        yield { data: mockPRs };
+      });
       
       const result = await client.fetchPRList({ since: '2024-01-01T00:00:00Z' });
       
       expect(result.prs).toHaveLength(1);
       expect(result.prs[0].number).toBe(124);
+    });
+
+    it('should skip non-merged PRs when state is closed', async () => {
+      const mockPRs = [
+        {
+          number: 123,
+          title: 'Merged PR',
+          user: { login: 'testuser' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/test-repo/pull/123',
+        },
+        {
+          number: 124,
+          title: 'Closed but not merged PR',
+          user: { login: 'testuser' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: null,
+          html_url: 'https://github.com/owner/test-repo/pull/124',
+        },
+      ];
+
+      mockOctokit.paginate.iterator.mockImplementation(async function* () {
+        yield { data: mockPRs };
+      });
+      
+      const result = await client.fetchPRList({ state: 'closed' });
+      
+      expect(result.prs).toHaveLength(1);
+      expect(result.prs[0].number).toBe(123);
     });
   });
 
@@ -115,34 +192,40 @@ describe('GitHubClient', () => {
         number: 123,
         title: 'Test PR',
         body: 'Test description',
-        author: { login: 'testuser' },
-        createdAt: '2024-01-01T00:00:00Z',
-        mergedAt: '2024-01-02T00:00:00Z',
-        baseRefName: 'main',
-        headRefName: 'feature/test',
-        url: 'https://github.com/owner/test-repo/pull/123',
+        user: { login: 'testuser' },
+        created_at: '2024-01-01T00:00:00Z',
+        merged_at: '2024-01-02T00:00:00Z',
+        base: { ref: 'main' },
+        head: { ref: 'feature/test' },
+        html_url: 'https://github.com/owner/test-repo/pull/123',
         additions: 10,
         deletions: 5,
-        changedFiles: 2,
-        files: [
-          {
-            path: 'src/test.ts',
-            additions: 8,
-            deletions: 3,
-            status: 'modified'
-          }
-        ],
-        reviews: [
-          {
-            author: { login: 'reviewer' },
-            state: 'APPROVED',
-            submittedAt: '2024-01-01T12:00:00Z'
-          }
-        ],
-        labels: [{ name: 'feature' }, { name: 'bug' }]
+        changed_files: 2,
+        labels: [{ name: 'feature' }, { name: 'bug' }],
       };
-      
-      mockExecSync.mockReturnValue(JSON.stringify(mockPR));
+
+      const mockFiles = [
+        {
+          filename: 'src/test.ts',
+          additions: 8,
+          deletions: 3,
+          status: 'modified',
+          previous_filename: null,
+        },
+      ];
+
+      const mockReviews = [
+        {
+          user: { login: 'reviewer' },
+          state: 'APPROVED',
+          submitted_at: '2024-01-01T12:00:00Z',
+          updated_at: '2024-01-01T12:00:00Z',
+        },
+      ];
+
+      mockOctokit.rest.pulls.get.mockResolvedValue({ data: mockPR });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: mockFiles });
+      mockOctokit.rest.pulls.listReviews.mockResolvedValue({ data: mockReviews });
       
       const result = await client.fetchPRDetails(123);
       
@@ -155,33 +238,40 @@ describe('GitHubClient', () => {
       expect(result.labels).toEqual(['feature', 'bug']);
     });
 
-    it('should handle PRs without file details', async () => {
+    it('should handle PRs without optional data', async () => {
       const mockPR = {
         number: 124,
-        title: 'No files PR',
-        body: '',
-        author: { login: 'testuser' },
-        createdAt: '2024-01-01T00:00:00Z',
-        mergedAt: '2024-01-02T00:00:00Z',
-        baseRefName: 'main',
-        headRefName: 'feature/empty',
-        url: 'https://github.com/owner/test-repo/pull/124',
+        title: 'Minimal PR',
+        body: null,
+        user: { login: 'testuser' },
+        created_at: '2024-01-01T00:00:00Z',
+        merged_at: '2024-01-02T00:00:00Z',
+        base: { ref: 'main' },
+        head: { ref: 'feature/minimal' },
+        html_url: 'https://github.com/owner/test-repo/pull/124',
         additions: 0,
         deletions: 0,
-        changedFiles: 0,
-        files: [],
-        reviews: [],
-        labels: []
+        changed_files: 0,
+        labels: [],
       };
-      
-      mockExecSync.mockReturnValue(JSON.stringify(mockPR));
+
+      mockOctokit.rest.pulls.get.mockResolvedValue({ data: mockPR });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: [] });
+      mockOctokit.rest.pulls.listReviews.mockResolvedValue({ data: [] });
       
       const result = await client.fetchPRDetails(124);
       
       expect(result.number).toBe(124);
+      expect(result.body).toBe('');
       expect(result.files).toHaveLength(0);
       expect(result.reviews).toHaveLength(0);
       expect(result.labels).toHaveLength(0);
+    });
+
+    it('should handle API errors gracefully', async () => {
+      mockOctokit.rest.pulls.get.mockRejectedValue(new Error('Not found'));
+      
+      await expect(client.fetchPRDetails(999)).rejects.toThrow('Failed to fetch PR #999');
     });
   });
 
@@ -189,12 +279,12 @@ describe('GitHubClient', () => {
     it('should fetch repository information', async () => {
       const mockRepo = {
         name: 'test-repo',
-        nameWithOwner: 'owner/test-repo',
-        defaultBranchRef: { name: 'main' },
-        description: 'A test repository'
+        full_name: 'owner/test-repo',
+        default_branch: 'main',
+        description: 'A test repository',
       };
-      
-      mockExecSync.mockReturnValue(JSON.stringify(mockRepo));
+
+      mockOctokit.rest.repos.get.mockResolvedValue({ data: mockRepo });
       
       const result = await client.getRepoInfo();
       
@@ -202,26 +292,104 @@ describe('GitHubClient', () => {
       expect(result.fullName).toBe('owner/test-repo');
       expect(result.defaultBranch).toBe('main');
       expect(result.description).toBe('A test repository');
+      expect(mockOctokit.rest.repos.get).toHaveBeenCalledWith({
+        owner: 'owner',
+        repo: 'test-repo',
+      });
     });
 
-    it('should handle repos without default branch', async () => {
+    it('should handle repos without description', async () => {
       const mockRepo = {
         name: 'test-repo',
-        nameWithOwner: 'owner/test-repo',
-        defaultBranchRef: null,
-        description: ''
+        full_name: 'owner/test-repo',
+        default_branch: 'main',
+        description: null,
       };
-      
-      mockExecSync.mockReturnValue(JSON.stringify(mockRepo));
+
+      mockOctokit.rest.repos.get.mockResolvedValue({ data: mockRepo });
       
       const result = await client.getRepoInfo();
       
-      expect(result.defaultBranch).toBe('main'); // fallback
       expect(result.description).toBe('');
     });
   });
 
-  describe('rate limiting', () => {
+  describe('fetchPRsBatch', () => {
+    it('should process PRs in batches', async () => {
+      const mockPRList = [
+        {
+          number: 123,
+          title: 'PR 1',
+          user: { login: 'user1' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/test-repo/pull/123',
+        },
+        {
+          number: 124,
+          title: 'PR 2',
+          user: { login: 'user2' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          html_url: 'https://github.com/owner/test-repo/pull/124',
+        },
+      ];
+
+      mockOctokit.paginate.iterator.mockImplementation(async function* () {
+        yield { data: mockPRList };
+      });
+
+      // Mock fetchPRDetails calls
+      const mockPRDetails = {
+        number: 123,
+        title: 'PR 1',
+        body: '',
+        author: { login: 'user1' },
+        createdAt: '2024-01-01T00:00:00Z',
+        mergedAt: '2024-01-02T00:00:00Z',
+        baseRefName: 'main',
+        headRefName: 'feature/1',
+        url: 'https://github.com/owner/test-repo/pull/123',
+        additions: 0,
+        deletions: 0,
+        changedFiles: 0,
+        files: [],
+        reviews: [],
+        labels: [],
+      };
+
+      mockOctokit.rest.pulls.get.mockResolvedValue({ 
+        data: { 
+          ...mockPRDetails, 
+          user: { login: 'user1' },
+          created_at: '2024-01-01T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          base: { ref: 'main' },
+          head: { ref: 'feature/1' },
+          html_url: 'https://github.com/owner/test-repo/pull/123',
+          labels: [],
+        }
+      });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: [] });
+      mockOctokit.rest.pulls.listReviews.mockResolvedValue({ data: [] });
+
+      const batches = [];
+      const progressCalls: Array<{ processed: number; total: number }> = [];
+      
+      for await (const batch of client.fetchPRsBatch({
+        batchSize: 1,
+        onProgress: (processed, total) => progressCalls.push({ processed, total }),
+      })) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(2); // 2 PRs with batchSize 1
+      expect(progressCalls).toHaveLength(2);
+      expect(progressCalls[1]).toEqual({ processed: 2, total: 2 });
+    });
+  });
+
+  describe('stats tracking', () => {
     it('should track request statistics', () => {
       const initialStats = client.getStats();
       expect(initialStats.requestCount).toBe(0);
@@ -229,52 +397,28 @@ describe('GitHubClient', () => {
       client.resetStats();
       const resetStats = client.getStats();
       expect(resetStats.requestCount).toBe(0);
-      expect(resetStats.lastRequestTime).toBe(0);
-    });
-  });
-
-  describe('error handling', () => {
-    it('should handle rate limit errors with retry', async () => {
-      mockExecSync
-        .mockImplementationOnce(() => {
-          throw new Error('rate limit exceeded');
-        })
-        .mockReturnValue(JSON.stringify([]));
-      
-      // Mock setTimeout to avoid actual waiting in tests
-      vi.spyOn(global, 'setTimeout').mockImplementation((fn: any) => {
-        fn();
-        return 0 as any;
-      });
-      
-      const result = await client.fetchPRList();
-      expect(result.prs).toHaveLength(0);
-      expect(mockExecSync).toHaveBeenCalledTimes(2); // Initial call + retry
     });
 
-    it('should handle network errors with retry', async () => {
-      mockExecSync
-        .mockImplementationOnce(() => {
-          throw new Error('network timeout');
-        })
-        .mockReturnValue(JSON.stringify([]));
-      
-      vi.spyOn(global, 'setTimeout').mockImplementation((fn: any) => {
-        fn();
-        return 0 as any;
+    it('should increment request count on fetchPRDetails', async () => {
+      mockOctokit.rest.pulls.get.mockResolvedValue({ 
+        data: { 
+          number: 123, 
+          title: 'Test',
+          user: { login: 'test' },
+          created_at: '2024-01-01T00:00:00Z',
+          base: { ref: 'main' },
+          head: { ref: 'feature' },
+          html_url: 'https://github.com/test/test/pull/123',
+          labels: [],
+        }
       });
-      
-      const result = await client.fetchPRList();
-      expect(result.prs).toHaveLength(0);
-      expect(mockExecSync).toHaveBeenCalledTimes(2);
-    });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValue({ data: [] });
+      mockOctokit.rest.pulls.listReviews.mockResolvedValue({ data: [] });
 
-    it('should propagate other errors', async () => {
-      mockExecSync.mockImplementation(() => {
-        throw new Error('unknown error');
-      });
+      await client.fetchPRDetails(123);
       
-      await expect(client.fetchPRList()).rejects.toThrow('GitHub CLI error: unknown error');
+      const stats = client.getStats();
+      expect(stats.requestCount).toBe(1);
     });
   });
 });

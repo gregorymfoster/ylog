@@ -45,14 +45,15 @@ Thank you for considering contributing to ylog! This document outlines the guide
    - Verify caching behavior
 
 3. **Contract Tests**: External API compatibility
-   - Test GitHub CLI output parsing
-   - Test Ollama API response handling
+   - Test GitHub API (Octokit) response handling
+   - Test AI provider API response handling (Ollama/Anthropic)
    - Validate data structure contracts
 
 4. **E2E Tests**: Full system verification
    - Test against real OSS repositories (microsoft/vscode, sindresorhus/got)
    - Verify resumability and idempotence
-   - Test with real Ollama and GitHub CLI
+   - Test with real AI providers and GitHub API
+   - Test GitHub token authentication methods
 
 5. **Performance Tests**: Scalability verification
    - Test large repository handling

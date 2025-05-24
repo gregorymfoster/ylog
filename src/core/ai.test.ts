@@ -28,6 +28,7 @@ describe('AIClient', () => {
     mockConfig = {
       github: {
         repo: 'owner/test-repo',
+        token: 'ghp_test_token',
         throttleRpm: 100,
       },
       ai: {

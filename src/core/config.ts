@@ -6,12 +6,14 @@ import { z } from 'zod';
 import { execSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { execAsync } from '../utils/exec.js';
 import type { YlogConfig, ResolvedYlogConfig } from '../types/index.js';
 
 const YlogConfigSchema = z.object({
   github: z
     .object({
       repo: z.string().optional(),
+      token: z.string().optional(),
       throttleRpm: z.number().min(1).max(5000).optional(),
     })
     .optional(),
@@ -30,6 +32,29 @@ const YlogConfigSchema = z.object({
   cacheDir: z.string().optional(),
   diffMaxBytes: z.number().min(1000).optional(),
 });
+
+/**
+ * Get GitHub token using authentication hierarchy
+ */
+export const getGitHubToken = async (config?: YlogConfig): Promise<string> => {
+  // 1. Environment variable (highest priority)
+  if (process.env.GITHUB_TOKEN) {
+    return process.env.GITHUB_TOKEN;
+  }
+
+  // 2. Config file token
+  if (config?.github?.token) {
+    return config.github.token;
+  }
+
+  // 3. Use gh CLI token
+  try {
+    const result = await execAsync('gh auth token');
+    return result.stdout.trim();
+  } catch {
+    throw new Error('GitHub token not found. Please set GITHUB_TOKEN environment variable, configure token in ylog.config.js, or run "gh auth login"');
+  }
+};
 
 /**
  * Auto-detect GitHub repository from git remote
@@ -89,6 +114,10 @@ export const loadConfig = async (configPath?: string): Promise<ResolvedYlogConfi
     }
   }
 
+  // Get GitHub token using hierarchy
+  const githubToken = await getGitHubToken(userConfig as YlogConfig);
+  userConfig.github = { ...userConfig.github, token: githubToken };
+
   return validateConfig(userConfig);
 };
 
@@ -102,6 +131,7 @@ export const validateConfig = (config: unknown): ResolvedYlogConfig => {
   return {
     github: {
       repo: validated.github?.repo || '',
+      token: validated.github?.token || '',
       throttleRpm: validated.github?.throttleRpm || 100,
     },
     ai: {

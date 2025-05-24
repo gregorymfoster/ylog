@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * ylog CLI entry point with full commander.js setup
  */

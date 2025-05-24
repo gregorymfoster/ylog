@@ -5,9 +5,9 @@ A lightweight TypeScript CLI tool that translates GitHub PR history into context
 ## What is ylog?
 
 ylog creates a structured history of your repository by:
-1. Fetching PR data via the GitHub CLI (`gh`)
-2. Summarizing each PR with a local Ollama model
-3. Storing the results in an append-only `./ylog/prs.jsonl` file
+1. Fetching PR data via the GitHub API (using Octokit)
+2. Summarizing each PR with AI (Ollama or Anthropic Claude)
+3. Storing the results in a SQLite database with optional `.ylog` context files
 
 This allows code generation tools and LLMs to understand *why* your code looks the way it does, not just what it contains.
 
@@ -30,30 +30,64 @@ ylog sync
 ## Requirements
 
 - Node.js 20+
-- GitHub CLI (`gh`) installed and authenticated
-- Ollama running locally (default) or accessible via network
+- GitHub Personal Access Token (PAT) with `repo` scope
+- AI provider: Ollama (local) or Anthropic Claude (API key)
+
+## Authentication
+
+ylog supports multiple ways to provide your GitHub token:
+
+1. **Environment variable (recommended):**
+   ```bash
+   export GITHUB_TOKEN=ghp_your_token_here
+   ```
+
+2. **Use existing `gh` CLI token:**
+   ```bash
+   gh auth login  # if not already authenticated
+   ylog sync      # automatically uses gh token
+   ```
+
+3. **Config file:**
+   ```json
+   {
+     "github": {
+       "token": "ghp_your_token_here"
+     }
+   }
+   ```
+
+4. **CLI flag:**
+   ```bash
+   ylog sync --github-token ghp_your_token_here
+   ```
 
 ## Configuration
 
-ylog uses a `ylog.config.json` file in your repository root:
+ylog uses a `ylog.config.js` or `ylog.config.json` file in your repository root:
 
-```json
-{
-  "github": {
-    "repo": "owner/repo",
-    "tokenEnv": "GITHUB_TOKEN",
-    "throttleRpm": 400
+```javascript
+// ylog.config.js
+export default {
+  github: {
+    repo: 'owner/repo',        // Auto-detected from git remote
+    token: 'ghp_...',          // Optional, uses hierarchy above
+    throttleRpm: 100           // GitHub API rate limit
   },
-  "llm": {
-    "provider": "ollama",
-    "model": "mistral:latest",
-    "endpoint": "http://localhost:11434",
-    "summaryWords": 40
+  ai: {
+    provider: 'ollama',        // 'ollama' | 'anthropic'
+    model: 'llama3.1:latest',
+    endpoint: 'http://localhost:11434',  // Ollama only
+    apiKey: 'sk-...',          // Anthropic only
+    maxTokens: 100
   },
-  "concurrency": "max",
-  "cacheDir": "~/.ylog-cache",
-  "diffMaxBytes": 1048576
-}
+  concurrency: 10,
+  outputDir: '.ylog',
+  generateContextFiles: true,   // Create .ylog files for human browsing
+  contextFileThreshold: 3,      // Min PRs to generate .ylog
+  historyMonths: 6,
+  diffMaxBytes: 1048576
+};
 ```
 
 See the [design document](design_doc.md) for full details.

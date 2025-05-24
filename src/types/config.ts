@@ -5,6 +5,7 @@
 export type YlogConfig = {
   github?: {
     repo?: string; // Auto-detect from git remote if not provided
+    token?: string; // GitHub PAT - falls back to gh auth token
     throttleRpm?: number; // Default 100
   };
   ai: {
@@ -27,7 +28,7 @@ export type YlogConfig = {
  * Fully resolved configuration with all defaults applied
  */
 export type ResolvedYlogConfig = Required<Omit<YlogConfig, 'github' | 'ai'>> & {
-  github: Required<NonNullable<YlogConfig['github']>>;
+  github: Required<Pick<NonNullable<YlogConfig['github']>, 'repo' | 'throttleRpm'>> & { token: string };
   ai: Required<Pick<YlogConfig['ai'], 'provider' | 'model'>> & Partial<Pick<YlogConfig['ai'], 'apiKey' | 'endpoint' | 'maxTokens'>>;
 };
 
