@@ -45,3 +45,9 @@ Thumbs.db
 *.db-shm
 ylog/
 .ylog
+
+# Documentation build artifacts (from docs/)
+docs/.next/
+docs/out/
+docs/node_modules/
+docs/.vercel

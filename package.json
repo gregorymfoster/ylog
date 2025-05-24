@@ -38,6 +38,14 @@
   ],
   "author": "Greg @ Graphite",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gregorymfoster/ylog.git"
+  },
+  "homepage": "https://github.com/gregorymfoster/ylog",
+  "bugs": {
+    "url": "https://github.com/gregorymfoster/ylog/issues"
+  },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.50",
     "@octokit/rest": "^20.0.2",

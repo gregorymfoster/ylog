@@ -102,13 +102,16 @@ See the [design document](design_doc.md) for full details.
 
 ## Documentation
 
-Complete documentation is available at [docs.ylog.dev](https://docs.ylog.dev) or in the [`docs/`](./docs/) directory.
+Complete documentation is available in the [`docs/`](./docs/) directory, built with Nextra.
 
-- [Quick Start Guide](./docs/quickstart.mdx)
-- [Installation Instructions](./docs/installation.mdx) 
-- [Core Concepts](./docs/concepts/)
-- [CLI Commands](./docs/cli/)
-- [Configuration Guide](./docs/configuration/)
+To view the documentation locally:
+```bash
+cd docs
+npm install
+npm run dev
+```
+
+The documentation will be available at `http://localhost:3000`
 
 ## Contributing
 
