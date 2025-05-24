@@ -39,6 +39,10 @@ describe('CLI Commands', () => {
     const options = syncCommand?.options.map(opt => opt.long);
     expect(options).toContain('--config');
     expect(options).toContain('--dry-run');
+    expect(options).toContain('--force');
+    expect(options).toContain('--since');
+    expect(options).toContain('--pr');
+    expect(options).toContain('--skip-ai');
   });
 
   it('should have show command with filter options', () => {
@@ -51,6 +55,8 @@ describe('CLI Commands', () => {
     expect(options).toContain('--author');
     expect(options).toContain('--since');
     expect(options).toContain('--file');
+    expect(options).toContain('--limit');
+    expect(options).toContain('--format');
   });
 
   it('should have clean command with options', () => {
@@ -61,5 +67,6 @@ describe('CLI Commands', () => {
     const options = cleanCommand?.options.map(opt => opt.long);
     expect(options).toContain('--config');
     expect(options).toContain('--cache-only');
+    expect(options).toContain('--force');
   });
 });
