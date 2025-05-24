@@ -11,15 +11,42 @@ export type RawPR = {
   body: string;
   author: { login: string };
   createdAt: string;
-  mergedAt: string;
-  files: Array<{ path: string; additions: number; deletions: number }>;
-  comments: Array<{ body: string }>;
-  patch: string; // Unified diff, truncated if > diffMaxBytes
-  labels: Array<{ name: string }>;
-  reviewers: Array<{ login: string }>;
+  mergedAt: string | null;
+  url: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  files: Array<{ 
+    path: string; 
+    additions: number; 
+    deletions: number;
+    status: string;
+    previous_filename: string | null;
+  }>;
+  reviews: Array<{ 
+    author: string;
+    state: string;
+    submittedAt: string;
+  }>;
+  labels: string[];
   baseRefName: string; // base branch
   headRefName: string; // head branch
-  closingIssuesReferences?: Array<{ number: number }>;
+};
+
+/**
+ * Raw PR list response
+ */
+export type RawPRList = {
+  prs: Array<{
+    number: number;
+    title: string;
+    author: { login: string };
+    createdAt: string;
+    mergedAt: string | null;
+    url: string;
+  }>;
+  total: number;
+  hasMore: boolean;
 };
 
 /**
