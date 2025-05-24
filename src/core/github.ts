@@ -41,12 +41,32 @@ export class GitHubClient {
   }
 
   /**
-   * Check if authentication is working
+   * Check if authentication is working and token has required scopes
    */
   async checkAuth(): Promise<void> {
     try {
+      // Check authentication
       await this.octokit.rest.users.getAuthenticated();
+      
+      // Try to access repo to verify scope - if this fails, we'll get a clear error
+      try {
+        await this.octokit.rest.repos.get({
+          owner: this.owner,
+          repo: this.repo,
+        });
+      } catch (scopeError: any) {
+        if (scopeError.status === 404) {
+          throw new Error(`Repository "${this.config.github.repo}" not found or token lacks "repo" scope. Ensure your GitHub token has repository access.`);
+        }
+        if (scopeError.status === 403) {
+          throw new Error(`Access denied to repository "${this.config.github.repo}". Your GitHub token may lack the required "repo" scope.`);
+        }
+        throw scopeError;
+      }
     } catch (error: any) {
+      if (error.message.includes('scope') || error.message.includes('Repository')) {
+        throw error; // Re-throw our enhanced error messages
+      }
       throw new Error(`GitHub authentication failed: ${error.message}`);
     }
   }

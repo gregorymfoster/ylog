@@ -25,6 +25,14 @@ ylog init
 
 # Fetch and summarize all PRs
 ylog sync
+
+# Query PR history
+ylog show --author alice
+ylog show --area src/auth
+ylog show --format json
+
+# Regenerate context files
+ylog generate src/auth
 ```
 
 ## Requirements

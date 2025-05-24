@@ -255,6 +255,85 @@ export class YlogDatabase {
   }
 
   /**
+   * Get PRs with file information for context generation
+   */
+  getPRsForContext(): Array<{
+    number: number;
+    title: string;
+    body: string | null;
+    author: string;
+    createdAt: string;
+    mergedAt: string | null;
+    baseRefName: string;
+    headRefName: string;
+    url: string;
+    additions: number;
+    deletions: number;
+    changedFiles: number;
+    files: Array<{
+      path: string;
+      additions: number;
+      deletions: number;
+      status: string;
+      previous_filename: string | null;
+    }>;
+    summary?: {
+      why: string;
+      business_impact: string;
+      technical_changes: string[];
+      areas: string[];
+      confidence_score: number;
+    };
+    labels: string[];
+  }> {
+    // Get all PRs
+    const prs = this.db.prepare(`
+      SELECT 
+        number, title, body, author, created_at, merged_at, 
+        base_branch, head_branch, url, additions, deletions, changed_files,
+        why, business_impact, technical_changes, files_summary,
+        llm_model, confidence_score, generated_at
+      FROM prs 
+      ORDER BY merged_at DESC, created_at DESC
+    `).all();
+
+    return prs.map((pr: any) => {
+      // Get files for this PR
+      const files = this.db.prepare('SELECT * FROM file_changes WHERE pr_number = ?').all(pr.number);
+      
+      return {
+        number: pr.number,
+        title: pr.title,
+        body: pr.body,
+        author: pr.author,
+        createdAt: pr.created_at,
+        mergedAt: pr.merged_at,
+        baseRefName: pr.base_branch,
+        headRefName: pr.head_branch,
+        url: pr.url,
+        additions: pr.additions,
+        deletions: pr.deletions,
+        changedFiles: pr.changed_files,
+        files: files.map((file: any) => ({
+          path: file.file_path,
+          additions: file.additions,
+          deletions: file.deletions,
+          status: file.status,
+          previous_filename: file.previous_filename
+        })),
+        summary: pr.why ? {
+          why: pr.why,
+          business_impact: pr.business_impact || '',
+          technical_changes: pr.technical_changes ? JSON.parse(pr.technical_changes) : [],
+          areas: [], // Will be populated from technical_changes if needed
+          confidence_score: pr.confidence_score || 0.8
+        } : undefined,
+        labels: [] // Labels are stored as JSON in the current schema but we'll skip for now
+      };
+    });
+  }
+
+  /**
    * Get database statistics
    */
   getStats(): {

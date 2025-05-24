@@ -8,6 +8,7 @@ import { join } from 'path';
 import { detectGitHubRepo, loadConfig } from '../core/config.js';
 import { SyncOrchestrator } from '../core/sync.js';
 import { YlogDatabase } from '../core/database.js';
+import { generateContextFiles, generateContextFile, detectAreas, shouldGenerateFile } from '../core/contextFiles.js';
 
 // Get package.json for version
 const packagePath = join(__dirname, '../package.json');
@@ -225,6 +226,7 @@ program
   .option('--author <author>', 'Filter by PR author')
   .option('--since <date>', 'Show PRs since date (YYYY-MM-DD)')
   .option('--file <path>', 'Show PRs affecting specific file')
+  .option('--area <area>', 'Show PRs affecting specific area (e.g., src/auth)')
   .option('--limit <number>', 'Number of PRs to show', '10')
   .option('--format <format>', 'Output format (table|json|summary)', 'table')
   .action(async (options) => {
@@ -254,7 +256,26 @@ program
         if (options.file) filters.file = options.file;
 
         // Query PRs
-        const prs = db.getPRs(filters);
+        let prs = db.getPRs(filters);
+
+        // Apply area filtering if specified (post-query filtering)
+        if (options.area) {
+          const allPRsWithFiles = db.getPRsForContext();
+          const areas = detectAreas(allPRsWithFiles);
+          
+          if (!areas.has(options.area)) {
+            console.log(chalk.yellow(`No PRs found affecting area: ${options.area}`));
+            const availableAreas = Array.from(areas.keys()).slice(0, 10);
+            if (availableAreas.length > 0) {
+              console.log(chalk.gray('Available areas:'), availableAreas.join(', '));
+            }
+            db.close();
+            return;
+          }
+
+          const areaPRNumbers = new Set(areas.get(options.area)!.map(pr => pr.number));
+          prs = prs.filter(pr => areaPRNumbers.has(pr.number));
+        }
 
         if (prs.length === 0) {
           console.log(chalk.yellow('No PRs found matching the criteria.'));
@@ -396,6 +417,65 @@ program
 
     } catch (error) {
       console.error('Clean command failed:', error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('generate')
+  .argument('[area]', 'Specific area to regenerate (e.g., src/auth)')
+  .option('-c, --config <path>', 'Configuration file path')
+  .description('Regenerate context files for specific areas')
+  .action(async (area, options) => {
+    try {
+      const { default: chalk } = await import('chalk');
+      const config = await loadConfig(options.config);
+      const db = new YlogDatabase(join(config.outputDir, 'prs.db'));
+      
+      // Check if database has data
+      const stats = db.getStats();
+      if (stats.totalPRs === 0) {
+        console.log(chalk.yellow('No PR data found. Run "ylog sync" first.'));
+        process.exit(1);
+      }
+
+      if (area) {
+        // Generate for specific area
+        console.log(chalk.blue(`🔄 Regenerating context for: ${area}`));
+        
+        const allPRs = db.getPRsForContext();
+        const areas = detectAreas(allPRs);
+        
+        if (!areas.has(area)) {
+          console.log(chalk.yellow(`No PRs found affecting area: ${area}`));
+          const availableAreas = Array.from(areas.keys()).slice(0, 10);
+          if (availableAreas.length > 0) {
+            console.log(chalk.gray('Available areas:'), availableAreas.join(', '));
+          }
+          process.exit(1);
+        }
+
+        const areaPRs = areas.get(area)!;
+        if (!shouldGenerateFile(area, areaPRs.length, config)) {
+          console.log(chalk.yellow(`Area "${area}" doesn't meet threshold (${areaPRs.length} PRs < ${config.contextFileThreshold})`));
+          process.exit(1);
+        }
+
+        await generateContextFile(area, areaPRs, config);
+        console.log(chalk.green(`✅ Generated: ${area}/.ylog`));
+      } else {
+        // Regenerate all context files
+        console.log(chalk.blue('🔄 Regenerating all context files...'));
+        
+        const allPRs = db.getPRsForContext();
+        const result = await generateContextFiles(allPRs, config);
+        
+        console.log(chalk.green(`✅ Generated ${result.generated} context files (skipped ${result.skipped})`));
+      }
+
+      db.close();
+    } catch (error) {
+      console.error('Generate command failed:', error);
       process.exit(1);
     }
   });

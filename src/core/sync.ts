@@ -8,6 +8,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { GitHubClient } from './github.js';
 import { AIClient } from './ai.js';
 import { YlogDatabase } from './database.js';
+import { generateContextFiles } from './contextFiles.js';
 import type { ResolvedYlogConfig } from '../types/config.js';
 import type { RawPR } from '../types/github.js';
 import type { PRRecord, FileChange, AISummary } from '../types/database.js';
@@ -273,9 +274,33 @@ export class SyncOrchestrator {
    * Generate context files for the hybrid output strategy
    */
   private async generateContextFiles(): Promise<void> {
-    // This would implement the .ylog file generation
-    // For now, just a placeholder
-    console.log('Context file generation not yet implemented');
+    if (!this.config.generateContextFiles) {
+      return;
+    }
+
+    try {
+      // Get all PRs from database with file information
+      const stats = this.db.getStats();
+      if (stats.totalPRs === 0) {
+        return;
+      }
+
+      // Get PRs with enriched data for context generation
+      const allPRs = this.db.getPRsForContext();
+      
+      if (allPRs.length === 0) {
+        return;
+      }
+
+      // Generate context files
+      const result = await generateContextFiles(allPRs, this.config);
+      
+      if (result.generated > 0) {
+        console.log(`Generated ${result.generated} context files (skipped ${result.skipped})`);
+      }
+    } catch (error) {
+      console.warn(`Context file generation failed: ${error}`);
+    }
   }
 
   /**

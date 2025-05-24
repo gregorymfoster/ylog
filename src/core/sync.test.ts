@@ -25,7 +25,8 @@ const mockYlogDatabase = {
   getPR: vi.fn(),
   insertPR: vi.fn(),
   insertFileChanges: vi.fn(),
-  getStats: vi.fn(),
+  getStats: vi.fn(() => ({ totalPRs: 0, totalFiles: 0, oldestPR: null, newestPR: null, topAuthors: [] })),
+  getPRsForContext: vi.fn(() => []),
   close: vi.fn(),
 };
 
@@ -102,7 +103,7 @@ describe('SyncOrchestrator', () => {
         provider: 'ollama',
         model: 'test-model',
       });
-      mockYlogDatabase.getStats.mockReturnValue({ totalPRs: 0 });
+      mockYlogDatabase.getStats.mockReturnValue({ totalPRs: 0, totalFiles: 0, oldestPR: null, newestPR: null, topAuthors: [] });
 
       const results = await orchestrator.testConnections();
 
