@@ -26,9 +26,9 @@ export type YlogConfig = {
 /**
  * Fully resolved configuration with all defaults applied
  */
-export type ResolvedYlogConfig = Required<YlogConfig> & {
-  github: Required<YlogConfig['github']>;
-  ai: Required<YlogConfig['ai']>;
+export type ResolvedYlogConfig = Required<Omit<YlogConfig, 'github' | 'ai'>> & {
+  github: Required<NonNullable<YlogConfig['github']>>;
+  ai: Required<Pick<YlogConfig['ai'], 'provider' | 'model'>> & Partial<Pick<YlogConfig['ai'], 'apiKey' | 'endpoint' | 'maxTokens'>>;
 };
 
 /**
