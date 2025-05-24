@@ -1,6 +1,6 @@
 ylog – Design Document
 
-Status: Draft – v0.5 (2025-05-24)
+Status: Draft – v0.6 (2025-05-24)
 MVP focus: Translate PR history → lightweight, in-repo context for code-gen LLMs.
 Principle: Keep it stupid-simple today so we can extend tomorrow.
 
@@ -8,9 +8,9 @@ Principle: Keep it stupid-simple today so we can extend tomorrow.
 
 1 Overview
 
-ylog is a tiny, batteries-included TypeScript CLI that backfills and keeps up-to-date a Why-Log for any GitHub repository. 1. Auto-detect GitHub repo from git remote. 2. Fetch raw PR metadata via the official gh CLI. 3. Summarise each PR with AI (Ollama or Anthropic via Vercel AI SDK). 4. Store results in a local SQLite database (./ylog/prs.db) so future coding agents can answer "why does this code look like this?" without hitting the network.
+ylog is a tiny, batteries-included TypeScript CLI that creates "Institutional Memory" for dev teams by converting GitHub PR history into discoverable context. 1. Auto-detect GitHub repo from git remote. 2. Fetch raw PR metadata via the official gh CLI. 3. Summarise each PR with AI (Ollama or Anthropic via Vercel AI SDK). 4. Store structured data in SQLite database and generate contextual .ylog files throughout the codebase for easy discovery.
 
-Raw PR data is cached locally outside the repo. The tool is idempotent, restart-safe, and can be run from CI or a laptop. SQLite provides ACID transactions and easy querying for future features.
+Raw PR data is cached locally outside the repo. The tool generates both structured data (SQLite) for rich querying and contextual files (.ylog) for easy discovery while browsing code. Tool is idempotent, restart-safe, and can be run from CI or a laptop.
 
 ⸻
 
@@ -37,7 +37,7 @@ ylog init
 ylog sync # idempotent – run anytime
 ```
 
-Outcome: ./ylog/prs.db grows; raw cache in ~/.ylog-cache/<owner>/<repo>/.
+Outcome: ./ylog/prs.db grows; contextual .ylog files appear near relevant code; raw cache in ~/.ylog-cache/<owner>/<repo>/.
 
 ⸻
 
@@ -47,7 +47,7 @@ Outcome: ./ylog/prs.db grows; raw cache in ~/.ylog-cache/<owner>/<repo>/.
 cli -> core pipeline
 |
 v
-ghClient -> cacheManager -> aiClient -> sqliteStorage
+ghClient -> cacheManager -> aiClient -> sqliteStorage -> contextFileGenerator
 ```
 
 All modules are pure functions; side-effects are isolated at boundaries.
@@ -73,7 +73,10 @@ All modules are pure functions; side-effects are isolated at boundaries.
     "maxTokens": 100
   },
   "concurrency": 10,
-  "outputFile": "./ylog/prs.db",
+  "outputDir": "./ylog", // prs.db + optional HISTORY.md
+  "generateContextFiles": true, // Create .ylog files near code
+  "contextFileThreshold": 3, // Min PRs to generate .ylog file
+  "historyMonths": 6, // How far back for contextual files
   "cacheDir": "~/.ylog-cache",
   "diffMaxBytes": 1048576
 }
@@ -111,52 +114,115 @@ type YlogConfig = {
     maxTokens?: number; // Default 100
   };
   concurrency?: number; // Default 10
-  outputFile?: string; // Default './ylog/prs.db'
+  outputDir?: string; // Default './ylog' (contains prs.db + HISTORY.md)
+  generateContextFiles?: boolean; // Default true - create .ylog files
+  contextFileThreshold?: number; // Default 3 - min PRs to generate .ylog
+  historyMonths?: number; // Default 6 - timeframe for contextual files
   cacheDir?: string; // Default '~/.ylog-cache'
   diffMaxBytes?: number; // Default 1MB
 };
 ```
 
-**SQLite Schema:**
+**Enhanced SQLite Schema:**
 ```sql
 CREATE TABLE prs (
+  -- Core GitHub data
   number INTEGER PRIMARY KEY,
-  merged_at TEXT,
-  author TEXT,
   title TEXT,
-  why TEXT,
-  areas TEXT, -- JSON array as text
-  files TEXT, -- JSON array as text  
+  body TEXT, -- Store original for re-processing
+  author TEXT,
+  created_at TEXT,
+  merged_at TEXT,
+  
+  -- Rich metadata
+  reviewers TEXT, -- JSON: ["alice", "bob"]
+  labels TEXT, -- JSON: ["bug", "feature"]
+  linked_issues TEXT, -- JSON: [123, 456]
+  files_changed TEXT, -- JSON with file paths and stats
+  base_branch TEXT,
+  head_branch TEXT,
+  
+  -- LLM-generated content
+  why TEXT, -- AI summary focusing on "why"
+  business_impact TEXT, -- Why was this needed?
+  technical_changes TEXT, -- What was implemented?
+  areas TEXT, -- Affected code areas: ["src/auth", "infra"]
+  
+  -- Quality & provenance
+  llm_model TEXT, -- "anthropic/claude-3" or "ollama/mistral"
+  confidence_score REAL, -- 0.0-1.0 if available
+  human_reviewed BOOLEAN DEFAULT FALSE,
+  schema_version INTEGER DEFAULT 1,
+  processed_at TEXT,
+  
+  -- Legacy stats
   diff_add INTEGER,
   diff_del INTEGER,
   comments INTEGER
 );
+
+-- Indexes for common queries
+CREATE INDEX idx_author ON prs(author);
+CREATE INDEX idx_areas ON prs(areas);
+CREATE INDEX idx_labels ON prs(labels);
+CREATE INDEX idx_merged_at ON prs(merged_at);
 ```
 
 **Example Record:**
 ```sql
 INSERT INTO prs VALUES (
   1234,
-  '2024-03-01T17:23:00Z',
-  'alice',
   'feat(auth): add session tokens',
-  'Introduces JWT-backed sessions to prepare for multi-region deployments.',
-  '["src/auth", "infra/k8s"]',
-  '["src/auth/*.ts", "infra/k8s/auth.yaml"]',
-  420,
-  17,
-  3
+  'This PR introduces JWT-based session management to replace our current cookie-based approach...',
+  'alice',
+  '2024-02-28T10:00:00Z',
+  '2024-03-01T17:23:00Z',
+  '["bob", "charlie"]', -- reviewers
+  '["enhancement", "auth"]', -- labels
+  '[456, 789]', -- linked issues
+  '[{"path": "src/auth/jwt.ts", "additions": 200, "deletions": 0}, {"path": "src/auth/session.ts", "additions": 150, "deletions": 50}]',
+  'main',
+  'feature/jwt-sessions',
+  'Introduces JWT-backed sessions to prepare for multi-region deployments',
+  'Required for scaling to multiple data centers while maintaining user session state',
+  'Adds JWT token generation, validation, and refresh mechanisms. Replaces cookie-based sessions with stateless tokens.',
+  '["src/auth", "infrastructure"]',
+  'anthropic/claude-3-haiku',
+  0.85,
+  FALSE,
+  1,
+  '2024-03-01T18:00:00Z',
+  350, 67, 3
 );
 ```
 
-**Dependencies:**
-```typescript
-type Dependencies = {
-  database: Database; // better-sqlite3
-  aiClient: (prData: RawPR) => Promise<string>;
-  ghClient: (prNumber: number) => Promise<RawPR>;
-  cacheManager: (prNumber: number, data: RawPR) => Promise<void>;
-};
+**Output Strategy:**
+ylog generates both structured data and human-readable context:
+
+1. **SQLite Database** (`./ylog/prs.db`): Structured, queryable data for tools and rich analysis
+2. **Contextual Files** (`src/auth/.ylog`, `infrastructure/.ylog`): Human-readable history files placed near relevant code
+3. **Central Overview** (`./ylog/HISTORY.md`): Optional chronological summary
+
+**Example Contextual File** (`src/auth/.ylog`):
+```markdown
+<!-- Auto-generated by ylog. Do not edit. Regenerate with: ylog sync --area src/auth -->
+
+# Development History: src/auth/
+
+## Recent Changes (Last 6 months)
+
+**🔐 JWT Token Migration** - [PR #1234](link) by @alice • 2024-03-01
+*Introduces JWT-backed sessions to prepare for multi-region deployments. Replaces cookie-based auth with stateless tokens.*
+
+**🐛 Fix Session Timeout** - [PR #1189](link) by @bob • 2024-02-15
+*Resolves race condition in session cleanup that caused users to be logged out unexpectedly during high traffic.*
+
+## Key Contributors
+- @alice (2 PRs): JWT migration, performance improvements
+- @bob (1 PR): Session timeout fixes
+
+---
+*Generated from ylog database • [Query this area](ylog show src/auth)*
 ```
 
 ⸻
@@ -182,9 +248,16 @@ type Dependencies = {
 
 **AI Summarization (Vercel AI SDK):**
 • Support Ollama and Anthropic via unified interface
-• Construct prompts focusing on "why" with enough "what" for code linking
+• Generate multiple summary types: why, business_impact, technical_changes
 • Handle minimal PR descriptions with best effort
+• Store provenance: model used, confidence scores, human review status
 • Parallel processing up to concurrency limit
+
+**Context File Generation:**
+• Generate .ylog files in directories with ≥3 PRs touching them
+• Focus on recent history (configurable months back)
+• Human-readable format with PR summaries, contributors, and impact areas
+• Clearly marked as auto-generated with regeneration instructions
 
 **Error Strategy:**
 • Idempotent: safe to restart anytime
@@ -199,10 +272,10 @@ Process exits when no newer PRs available.
 
 ```
 src/
-├── cli/           # Commands (init, sync)
+├── cli/           # Commands (init, sync, show, generate)
 ├── core/          # Main business logic  
 ├── adapters/      # aiClient.ts, ghClient.ts
-├── storage/       # SQLite database operations
+├── storage/       # SQLite database operations + context file generation
 └── types/         # Type definitions
 ```
 
@@ -244,16 +317,43 @@ License: MIT (OSI-approved, permissive).
 
 ⸻
 
-11 Future Extensions (Phase 2+)
-• Query interface: "show me all auth-related PRs" via SQL
-• Generate Markdown wiki per area (auth.md, infra.md).
-• Vector embeddings for semantic search.
-• VS Code hover/CodeLens.
-• Scheduled GitHub Action (cron: nightly) running ylog sync.
+11 CLI Commands & Usage
+
+**Core Commands:**
+```bash
+ylog init                         # Initialize config, create ylog directory
+ylog sync                         # Full sync: update DB + regenerate context files
+ylog show src/auth                # Query specific area
+ylog show --author alice          # Show changes by author  
+ylog show --since "2024-01-01"    # Time-based queries
+ylog generate src/auth            # Regenerate .ylog file for specific area
+ylog clean                        # Remove all .ylog files (keep database)
+```
+
+**Query Examples:**
+```bash
+ylog show src/auth --format=json          # Structured output
+ylog show --labels bug,critical           # Filter by PR labels
+ylog show --reviewers alice,bob           # Filter by reviewers
+ylog search "JWT" "authentication"       # Search across summaries
+```
 
 ⸻
 
-12 Change Log
+12 Future Extensions (Phase 2+)
+• Human review workflow: mark summaries as reviewed/corrected
+• Confidence scoring and quality indicators
+• Export formats: JSON, Markdown, CSV for integration
+• Additional AI providers via Vercel AI SDK
+• Vector embeddings for semantic search
+• VS Code hover/CodeLens integration
+• GitHub Action for automated sync
+• Team insights and analytics dashboard
+
+⸻
+
+13 Change Log
+• v0.6 – Enhanced schema with rich metadata, hybrid output strategy (SQLite + contextual .ylog files), CLI commands for querying, positioning as "Institutional Memory" tool.
 • v0.5 – SQLite storage, Vercel AI SDK integration, auto-detect GitHub repo, simplified architecture (5 modules vs 9), reduced testing complexity for MVP.
 • v0.4 – detailed project structure, comprehensive testing strategy including real-world e2e tests, coding patterns (types over interfaces, Result pattern), dependency injection approach.
 • v0.3 – clarified error handling strategy (fail fast for dependencies), detailed resumability approach, updated concurrency defaults, switched to oxlint for performance, added pre-commit hooks.
@@ -262,7 +362,7 @@ License: MIT (OSI-approved, permissive).
 
 ⸻
 
-13 Contact
+14 Contact
 
 Maintainer: Greg @ Graphite – opens issues/PRs on GitHub.
 
