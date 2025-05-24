@@ -37,5 +37,11 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Cache directory
+# ylog-specific
 .ylog-cache/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+ylog/
+.ylog

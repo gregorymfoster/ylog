@@ -338,3 +338,72 @@ npm run ci            # Full pipeline: lint + typecheck + test + build
 - `husky` for git hooks
 
 Keep dependencies minimal and well-justified. Prefer battle-tested libraries over cutting-edge ones for stability.
+
+## Implementation Plan & Current Status
+
+### Active Development Phase
+**Current Phase:** Phase 1 - Foundation & Configuration  
+**Current Milestone:** Phase 1.1 - Project Structure & Types  
+**Implementation Plan:** See `IMPLEMENTATION_PLAN.md` for complete roadmap  
+
+### Development Workflow
+1. **Always reference** `IMPLEMENTATION_PLAN.md` before starting work
+2. **Follow milestone order** - complete current milestone before moving to next
+3. **Quality gates required** - all validation criteria must pass
+4. **Incremental progress** - commit at each milestone completion
+5. **Update tracking** - check off completed items in implementation plan
+
+### Current Milestone: Phase 1.1 - Project Structure & Types
+
+**Goal:** Establish clean project structure with TypeScript types
+
+**Tasks to Complete:**
+- [ ] Create directory structure according to design
+- [ ] Define core TypeScript types
+- [ ] Set up basic exports and imports
+
+**Expected Directory Structure:**
+```
+src/
+├── cli/index.ts           # Basic CLI entry point
+├── core/config.ts         # Configuration types & validation
+├── types/
+│   ├── config.ts          # YlogConfig type
+│   ├── github.ts          # RawPR, GitHubMetadata types
+│   ├── database.ts        # PRRecord, DatabaseSchema types
+│   └── index.ts           # Re-exports
+```
+
+**Validation Criteria:**
+- [ ] ✅ Clean directory structure matches design
+- [ ] ✅ All TypeScript types compile without errors
+- [ ] ✅ Basic imports/exports work correctly
+
+**Next Steps After 1.1:**
+- Milestone 1.2: Configuration System (Zod validation, auto-detection)
+- Milestone 1.3: CLI Foundation (commander.js, init command)
+
+### Implementation Phases Overview
+- **Phase 1:** Foundation & Configuration (4-6h) ← *CURRENT*
+- **Phase 2:** Data Layer & Storage (6-8h)
+- **Phase 3:** AI Integration (4-6h)
+- **Phase 4:** Core Pipeline (6-8h)
+- **Phase 5:** Output Generation (6-8h)
+- **Phase 6:** Testing & Polish (4-6h)
+
+### Milestone Completion Process
+1. Complete all tasks for current milestone
+2. Validate all criteria are met
+3. Run quality gates: `npm run ci`
+4. Commit with planned message from implementation plan
+5. Update checkboxes in `IMPLEMENTATION_PLAN.md`
+6. Move to next milestone
+
+### Key Reminders
+- Each milestone builds incrementally toward working functionality
+- Focus on current milestone only - don't jump ahead
+- All work should be testable and validated at each checkpoint
+- Use planned commit messages for consistency
+- Update progress tracking as you complete tasks
+
+When coding, always consider which milestone you're working on and ensure your implementation aligns with the planned deliverables and validation criteria.

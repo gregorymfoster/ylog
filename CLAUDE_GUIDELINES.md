@@ -211,3 +211,40 @@ npm run test:e2e:real-world # Real OSS repo tests
 12. End-to-end testing
 
 Follow the principles in the design document: keep it simple, idempotent, and ready to extend.
+
+## Implementation Plan & Workflow
+
+### Current Status
+- **Implementation Plan:** See `IMPLEMENTATION_PLAN.md` for detailed roadmap
+- **Current Phase:** Phase 1 - Foundation & Configuration
+- **Next Milestone:** Phase 1.1 - Project Structure & Types
+
+### Development Workflow
+1. **Reference Implementation Plan:** Always check `IMPLEMENTATION_PLAN.md` for current milestone
+2. **Follow Phase Order:** Complete phases sequentially with validation at each milestone
+3. **Quality Gates:** Each milestone must pass all validation criteria before proceeding
+4. **Incremental Commits:** Use planned commit messages from implementation plan
+5. **Testing Strategy:** Unit tests throughout, integration tests at key milestones
+
+### Milestone Completion Process
+For each milestone:
+1. Complete all tasks in the milestone checklist
+2. Run full quality gate: `npm run ci`
+3. Validate all milestone criteria are met
+4. Commit using planned commit message
+5. Update `IMPLEMENTATION_PLAN.md` checkboxes
+6. Move to next milestone
+
+### Key Implementation Priorities
+- **Phase 1:** Foundation (types, config, CLI) - 4-6 hours
+- **Phase 2:** Data Layer (SQLite, GitHub client, caching) - 6-8 hours  
+- **Phase 3:** AI Integration (Vercel SDK, prompts) - 4-6 hours
+- **Phase 4:** Core Pipeline (processing, sync command) - 6-8 hours
+- **Phase 5:** Output Generation (context files, queries) - 6-8 hours
+- **Phase 6:** Testing & Polish (integration tests, docs) - 4-6 hours
+
+### Progress Tracking
+- Maintain checkboxes in `IMPLEMENTATION_PLAN.md`
+- Update milestone status as: Not Started → In Progress → Completed
+- Track validation criteria completion
+- Monitor overall phase progress
