@@ -100,6 +100,16 @@ export default {
 
 See the [design document](design_doc.md) for full details.
 
+## Documentation
+
+Complete documentation is available at [docs.ylog.dev](https://docs.ylog.dev) or in the [`docs/`](./docs/) directory.
+
+- [Quick Start Guide](./docs/quickstart.mdx)
+- [Installation Instructions](./docs/installation.mdx) 
+- [Core Concepts](./docs/concepts/)
+- [CLI Commands](./docs/cli/)
+- [Configuration Guide](./docs/configuration/)
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
