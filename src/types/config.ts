@@ -1,60 +1,172 @@
 /**
- * Configuration types for ylog
+ * Configuration types for ylog2
  */
 
+export interface Ylog2Config {
+  dataDir: string
+  storage: StorageConfig
+  ai: AIConfig
+  exploration: ExplorationConfig
+  questions: QuestionConfig
+  synthesis: SynthesisConfig
+  session: SessionConfig
+}
+
+export interface StorageConfig {
+  strategy: 'centralized' | 'inline'
+  format: 'json' | 'markdown'
+  compression: boolean
+  backup: boolean
+  maxHistoryDays: number
+}
+
+export interface AIConfig {
+  provider: 'ollama' | 'anthropic'
+  model: string
+  endpoint?: string
+  apiKey?: string
+  maxTokens: number
+  temperature: number
+  timeout: number
+}
+
+export interface ExplorationConfig {
+  maxDepth: number
+  ignorePatterns: string[]
+  focusAreas: string[]
+  includeTests: boolean
+  minFileSize: number
+  maxFileSize: number
+  supportedLanguages: string[]
+}
+
+export interface QuestionConfig {
+  maxPerSession: number
+  prioritize: QuestionPriority[]
+  questionTypes: import('./core.js').QuestionType[]
+  adaptiveDifficulty: boolean
+  contextWindow: number
+  followUpProbability: number
+}
+
+export type QuestionPriority = 'recent_changes' | 'complex_code' | 'missing_context' | 'high_impact' | 'user_focus'
+
+export interface SynthesisConfig {
+  updateInterval: 'after_each_question' | 'session_end' | 'real_time'
+  contextFileThreshold: number
+  confidenceThreshold: number
+  autoGenerate: boolean
+  includeMetrics: boolean
+}
+
+export interface SessionConfig {
+  defaultLength: 'quick' | 'medium' | 'deep'
+  autoSave: boolean
+  resumeTimeout: number // minutes
+  progressVisualization: boolean
+  gamification: GamificationConfig
+}
+
+export interface GamificationConfig {
+  enabled: boolean
+  showProgress: boolean
+  showStreak: boolean
+  showImpact: boolean
+  celebrations: boolean
+}
+
+export interface ResolvedYlog2Config extends Ylog2Config {
+  // Computed/resolved values
+  repoRoot: string
+  gitRepo: string
+  cacheDir: string
+  outputDir: string
+}
+
+// Default configuration
+export const DEFAULT_CONFIG: Omit<Ylog2Config, 'dataDir'> = {
+  storage: {
+    strategy: 'centralized',
+    format: 'json',
+    compression: false,
+    backup: true,
+    maxHistoryDays: 365
+  },
+  ai: {
+    provider: 'ollama',
+    model: 'llama3.2',
+    endpoint: 'http://localhost:11434',
+    maxTokens: 500,
+    temperature: 0.3,
+    timeout: 30000
+  },
+  exploration: {
+    maxDepth: 10,
+    ignorePatterns: [
+      'node_modules',
+      '.git',
+      'dist',
+      'build',
+      '.next',
+      'coverage',
+      '.nyc_output',
+      'logs'
+    ],
+    focusAreas: ['src', 'lib', 'app', 'components'],
+    includeTests: false,
+    minFileSize: 100,
+    maxFileSize: 50000,
+    supportedLanguages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java']
+  },
+  questions: {
+    maxPerSession: 10,
+    prioritize: ['recent_changes', 'missing_context', 'complex_code'],
+    questionTypes: ['why', 'alternatives', 'tradeoffs', 'business'],
+    adaptiveDifficulty: true,
+    contextWindow: 1000,
+    followUpProbability: 0.3
+  },
+  synthesis: {
+    updateInterval: 'after_each_question',
+    contextFileThreshold: 3,
+    confidenceThreshold: 0.6,
+    autoGenerate: true,
+    includeMetrics: true
+  },
+  session: {
+    defaultLength: 'medium',
+    autoSave: true,
+    resumeTimeout: 60,
+    progressVisualization: true,
+    gamification: {
+      enabled: true,
+      showProgress: true,
+      showStreak: true,
+      showImpact: true,
+      celebrations: true
+    }
+  }
+}
+
+// Legacy ylog config types for migration
 export type YlogConfig = {
   github?: {
-    repo?: string; // Auto-detect from git remote if not provided
-    token?: string; // GitHub PAT - falls back to gh auth token
-    throttleRpm?: number; // Default 100
+    repo?: string;
+    token?: string;
+    throttleRpm?: number;
   };
   ai: {
     provider: 'ollama' | 'anthropic';
     model: string;
-    apiKey?: string; // For Anthropic
-    endpoint?: string; // For Ollama, default 'http://localhost:11434'
-    maxTokens?: number; // Default 100
+    apiKey?: string;
+    endpoint?: string;
+    maxTokens?: number;
   };
-  concurrency?: number; // Default 10
-  outputDir?: string; // Default './ylog' (contains prs.db + HISTORY.md)
-  generateContextFiles?: boolean; // Default true - create .ylog files
-  contextFileThreshold?: number; // Default 3 - min PRs to generate .ylog
-  historyMonths?: number; // Default 6 - timeframe for contextual files
-  cacheDir?: string; // Default '~/.ylog-cache'
-  diffMaxBytes?: number; // Default 1MB
+  concurrency?: number;
+  outputDir?: string;
+  generateContextFiles?: boolean;
+  contextFileThreshold?: number;
+  historyMonths?: number;
+  cacheDir?: string;
+  diffMaxBytes?: number;
 };
-
-/**
- * Fully resolved configuration with all defaults applied
- */
-export type ResolvedYlogConfig = Required<Omit<YlogConfig, 'github' | 'ai'>> & {
-  github: Required<Pick<NonNullable<YlogConfig['github']>, 'repo' | 'throttleRpm'>> & { token: string };
-  ai: Required<Pick<YlogConfig['ai'], 'provider' | 'model'>> & Partial<Pick<YlogConfig['ai'], 'apiKey' | 'endpoint' | 'maxTokens'>>;
-};
-
-/**
- * Configuration validation result
- */
-export type ConfigValidationResult = 
-  | { success: true; config: ResolvedYlogConfig }
-  | { success: false; error: string };
-
-/**
- * Default configuration values
- */
-export const DEFAULT_CONFIG = {
-  github: {
-    throttleRpm: 100,
-  },
-  ai: {
-    endpoint: 'http://localhost:11434',
-    maxTokens: 100,
-  },
-  concurrency: 10,
-  outputDir: './ylog',
-  generateContextFiles: true,
-  contextFileThreshold: 3,
-  historyMonths: 6,
-  cacheDir: '~/.ylog-cache',
-  diffMaxBytes: 1048576, // 1MB
-} as const;

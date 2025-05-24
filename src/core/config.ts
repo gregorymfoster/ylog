@@ -1,152 +1,267 @@
 /**
- * Configuration management with Zod validation and auto-detection
+ * Configuration management for ylog2
  */
 
-import { z } from 'zod';
-import { execSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
-import { execAsync } from '../utils/exec.js';
-import type { YlogConfig, ResolvedYlogConfig } from '../types/index.js';
+import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { join, resolve } from 'path'
+import { homedir } from 'os'
+import { execSync } from 'child_process'
+import { z } from 'zod'
+import { Ylog2Config, ResolvedYlog2Config, DEFAULT_CONFIG } from '../types/config.js'
 
-const YlogConfigSchema = z.object({
-  github: z
-    .object({
-      repo: z.string().optional(),
-      token: z.string().optional(),
-      throttleRpm: z.number().min(1).max(5000).optional(),
-    })
-    .optional(),
-  ai: z.object({
-    provider: z.enum(['ollama', 'anthropic']),
-    model: z.string(),
-    apiKey: z.string().optional(),
-    endpoint: z.string().url().optional(),
-    maxTokens: z.number().min(100).max(200000).optional(),
-  }),
-  concurrency: z.number().min(1).max(50).optional(),
-  outputDir: z.string().optional(),
-  generateContextFiles: z.boolean().optional(),
-  contextFileThreshold: z.number().min(1).optional(),
-  historyMonths: z.number().min(1).max(60).optional(),
-  cacheDir: z.string().optional(),
-  diffMaxBytes: z.number().min(1000).optional(),
-});
+// Zod schemas for validation
+const StorageConfigSchema = z.object({
+  strategy: z.enum(['centralized', 'inline']),
+  format: z.enum(['json', 'markdown']),
+  compression: z.boolean(),
+  backup: z.boolean(),
+  maxHistoryDays: z.number().min(1)
+})
 
-/**
- * Get GitHub token using authentication hierarchy
- */
-export const getGitHubToken = async (config?: YlogConfig): Promise<string> => {
-  // 1. Environment variable (highest priority)
-  if (process.env.GITHUB_TOKEN) {
-    return process.env.GITHUB_TOKEN;
-  }
+const AIConfigSchema = z.object({
+  provider: z.enum(['ollama', 'anthropic']),
+  model: z.string().min(1),
+  endpoint: z.string().optional(),
+  apiKey: z.string().optional(),
+  maxTokens: z.number().min(1),
+  temperature: z.number().min(0).max(2),
+  timeout: z.number().min(1000)
+})
 
-  // 2. Config file token
-  if (config?.github?.token) {
-    return config.github.token;
-  }
+const ExplorationConfigSchema = z.object({
+  maxDepth: z.number().min(1),
+  ignorePatterns: z.array(z.string()),
+  focusAreas: z.array(z.string()),
+  includeTests: z.boolean(),
+  minFileSize: z.number().min(0),
+  maxFileSize: z.number().min(1),
+  supportedLanguages: z.array(z.string())
+})
 
-  // 3. Use gh CLI token
-  try {
-    const result = await execAsync('gh auth token');
-    return result.stdout.trim();
-  } catch {
-    throw new Error('GitHub token not found. Please set GITHUB_TOKEN environment variable, configure token in ylog.config.js, or run "gh auth login"');
-  }
-};
+const QuestionConfigSchema = z.object({
+  maxPerSession: z.number().min(1),
+  prioritize: z.array(z.enum(['recent_changes', 'complex_code', 'missing_context', 'high_impact', 'user_focus'])),
+  questionTypes: z.array(z.enum(['why', 'alternatives', 'tradeoffs', 'business', 'performance', 'security'])),
+  adaptiveDifficulty: z.boolean(),
+  contextWindow: z.number().min(100),
+  followUpProbability: z.number().min(0).max(1)
+})
 
-/**
- * Auto-detect GitHub repository from git remote
- */
-export const detectGitHubRepo = async (): Promise<string> => {
-  try {
-    const remoteUrl = execSync('git remote get-url origin', { 
-      encoding: 'utf8', 
-      stdio: 'pipe' 
-    }).trim();
+const SynthesisConfigSchema = z.object({
+  updateInterval: z.enum(['after_each_question', 'session_end', 'real_time']),
+  contextFileThreshold: z.number().min(1),
+  confidenceThreshold: z.number().min(0).max(1),
+  autoGenerate: z.boolean(),
+  includeMetrics: z.boolean()
+})
+
+const GamificationConfigSchema = z.object({
+  enabled: z.boolean(),
+  showProgress: z.boolean(),
+  showStreak: z.boolean(),
+  showImpact: z.boolean(),
+  celebrations: z.boolean()
+})
+
+const SessionConfigSchema = z.object({
+  defaultLength: z.enum(['quick', 'medium', 'deep']),
+  autoSave: z.boolean(),
+  resumeTimeout: z.number().min(1),
+  progressVisualization: z.boolean(),
+  gamification: GamificationConfigSchema
+})
+
+const Ylog2ConfigSchema = z.object({
+  dataDir: z.string().min(1),
+  storage: StorageConfigSchema,
+  ai: AIConfigSchema,
+  exploration: ExplorationConfigSchema,
+  questions: QuestionConfigSchema,
+  synthesis: SynthesisConfigSchema,
+  session: SessionConfigSchema
+})
+
+export class ConfigManager {
+  private static readonly CONFIG_FILENAME = 'ylog2.config.json'
+  private static readonly LEGACY_CONFIG_FILENAME = 'ylog.config.json'
+
+  /**
+   * Load configuration from file with validation and defaults
+   */
+  static async loadConfig(configPath?: string): Promise<ResolvedYlog2Config> {
+    const resolvedPath = configPath || this.findConfigFile()
     
-    // Parse GitHub URLs (SSH and HTTPS)
-    const githubMatch = remoteUrl.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/);
-    if (!githubMatch) {
-      throw new Error('Not a GitHub repository');
-    }
-    return githubMatch[1];
-  } catch (error) {
-    throw new Error(`Failed to detect GitHub repo: ${error}`);
-  }
-};
-
-/**
- * Load and validate configuration
- */
-export const loadConfig = async (configPath?: string): Promise<ResolvedYlogConfig> => {
-  const searchPaths = configPath 
-    ? [configPath]
-    : ['ylog.config.js', 'ylog.config.json', '.ylogrc.json'];
-
-  let userConfig: Partial<YlogConfig> = {};
-
-  for (const path of searchPaths) {
-    if (existsSync(path)) {
+    let rawConfig: any = {}
+    
+    if (resolvedPath && existsSync(resolvedPath)) {
       try {
-        if (path.endsWith('.js')) {
-          // Dynamic import for ES modules
-          const configModule = require(join(process.cwd(), path));
-          userConfig = configModule.default || configModule;
-        } else {
-          userConfig = JSON.parse(readFileSync(path, 'utf8'));
-        }
-        break;
+        const content = readFileSync(resolvedPath, 'utf-8')
+        rawConfig = JSON.parse(content)
       } catch (error) {
-        throw new Error(`Failed to load config from ${path}: ${error}`);
+        throw new Error(`Failed to parse config file ${resolvedPath}: ${error}`)
+      }
+    }
+
+    // Apply defaults and validate
+    const config = this.applyDefaults(rawConfig)
+    const validated = this.validateConfig(config)
+    
+    // Resolve computed values
+    return this.resolveConfig(validated)
+  }
+
+  /**
+   * Find configuration file (prefer ylog2, fallback to ylog)
+   */
+  private static findConfigFile(): string | null {
+    const cwd = process.cwd()
+    
+    // Check for ylog2 config first
+    const ylog2Config = join(cwd, this.CONFIG_FILENAME)
+    if (existsSync(ylog2Config)) {
+      return ylog2Config
+    }
+    
+    // Check for legacy ylog config
+    const legacyConfig = join(cwd, this.LEGACY_CONFIG_FILENAME)
+    if (existsSync(legacyConfig)) {
+      console.log('⚠️  Found legacy ylog.config.json - consider migrating to ylog2.config.json')
+      return legacyConfig
+    }
+    
+    return null
+  }
+
+  /**
+   * Apply default values to configuration
+   */
+  private static applyDefaults(rawConfig: any): Ylog2Config {
+    const dataDir = rawConfig.dataDir || '.ylog2'
+    
+    return {
+      dataDir,
+      storage: { ...DEFAULT_CONFIG.storage, ...rawConfig.storage },
+      ai: { ...DEFAULT_CONFIG.ai, ...rawConfig.ai },
+      exploration: { 
+        ...DEFAULT_CONFIG.exploration, 
+        ...rawConfig.exploration,
+        ignorePatterns: [
+          ...DEFAULT_CONFIG.exploration.ignorePatterns,
+          ...(rawConfig.exploration?.ignorePatterns || [])
+        ]
+      },
+      questions: { ...DEFAULT_CONFIG.questions, ...rawConfig.questions },
+      synthesis: { ...DEFAULT_CONFIG.synthesis, ...rawConfig.synthesis },
+      session: {
+        ...DEFAULT_CONFIG.session,
+        ...rawConfig.session,
+        gamification: {
+          ...DEFAULT_CONFIG.session.gamification,
+          ...rawConfig.session?.gamification
+        }
       }
     }
   }
 
-  // Auto-detect GitHub repo if not provided
-  if (!userConfig.github?.repo) {
+  /**
+   * Validate configuration using Zod schemas
+   */
+  private static validateConfig(config: any): Ylog2Config {
     try {
-      const detectedRepo = await detectGitHubRepo();
-      userConfig.github = { ...userConfig.github, repo: detectedRepo };
-    } catch {
-      // GitHub repo detection failed, will be caught in validation
+      return Ylog2ConfigSchema.parse(config)
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const issues = error.issues.map(issue => 
+          `${issue.path.join('.')}: ${issue.message}`
+        ).join('\n')
+        throw new Error(`Configuration validation failed:\n${issues}`)
+      }
+      throw error
     }
   }
 
-  // Get GitHub token using hierarchy
-  const githubToken = await getGitHubToken(userConfig as YlogConfig);
-  userConfig.github = { ...userConfig.github, token: githubToken };
+  /**
+   * Resolve computed configuration values
+   */
+  private static resolveConfig(config: Ylog2Config): ResolvedYlog2Config {
+    const repoRoot = this.findGitRoot()
+    const gitRepo = this.detectGitRepo()
+    
+    return {
+      ...config,
+      repoRoot,
+      gitRepo,
+      cacheDir: resolve(config.dataDir, 'cache'),
+      outputDir: resolve(config.dataDir)
+    }
+  }
 
-  return validateConfig(userConfig);
-};
+  /**
+   * Find git repository root
+   */
+  private static findGitRoot(): string {
+    try {
+      return execSync('git rev-parse --show-toplevel', { 
+        encoding: 'utf-8',
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim()
+    } catch {
+      return process.cwd()
+    }
+  }
 
-/**
- * Validate configuration with Zod
- */
-export const validateConfig = (config: unknown): ResolvedYlogConfig => {
-  const validated = YlogConfigSchema.parse(config);
+  /**
+   * Detect git repository from remote URL
+   */
+  private static detectGitRepo(): string {
+    try {
+      const remoteUrl = execSync('git remote get-url origin', {
+        encoding: 'utf-8',
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim()
 
-  // Apply defaults for resolved config
-  return {
-    github: {
-      repo: validated.github?.repo || '',
-      token: validated.github?.token || '',
-      throttleRpm: validated.github?.throttleRpm || 100,
-    },
-    ai: {
-      provider: validated.ai.provider,
-      model: validated.ai.model,
-      apiKey: validated.ai.apiKey,
-      endpoint: validated.ai.endpoint,
-      maxTokens: validated.ai.maxTokens,
-    },
-    concurrency: validated.concurrency || 10,
-    outputDir: validated.outputDir || '.ylog',
-    generateContextFiles: validated.generateContextFiles ?? true,
-    contextFileThreshold: validated.contextFileThreshold || 50,
-    historyMonths: validated.historyMonths || 6,
-    cacheDir: validated.cacheDir || '.ylog/cache',
-    diffMaxBytes: validated.diffMaxBytes || 1000000,
-  };
-};
+      // Parse GitHub URL
+      const githubMatch = remoteUrl.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/)
+      if (githubMatch) {
+        return `${githubMatch[1]}/${githubMatch[2]}`
+      }
+
+      return 'unknown/repository'
+    } catch {
+      return 'unknown/repository'
+    }
+  }
+
+  /**
+   * Create a new configuration file
+   */
+  static async createConfig(options: Partial<Ylog2Config> = {}): Promise<string> {
+    const config: Ylog2Config = {
+      dataDir: options.dataDir || '.ylog2',
+      storage: { ...DEFAULT_CONFIG.storage, ...options.storage },
+      ai: { ...DEFAULT_CONFIG.ai, ...options.ai },
+      exploration: { ...DEFAULT_CONFIG.exploration, ...options.exploration },
+      questions: { ...DEFAULT_CONFIG.questions, ...options.questions },
+      synthesis: { ...DEFAULT_CONFIG.synthesis, ...options.synthesis },
+      session: { ...DEFAULT_CONFIG.session, ...options.session }
+    }
+
+    const configPath = join(process.cwd(), this.CONFIG_FILENAME)
+    
+    writeFileSync(configPath, JSON.stringify(config, null, 2))
+    
+    return configPath
+  }
+
+  /**
+   * Get default configuration for initial setup
+   */
+  static getDefaultConfig(): Ylog2Config {
+    return {
+      dataDir: '.ylog2',
+      ...DEFAULT_CONFIG
+    }
+  }
+}

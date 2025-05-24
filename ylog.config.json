@@ -1,0 +1,18 @@
+{
+  "github": {
+    "repo": "gregorymfoster/ylog",
+    "throttleRpm": 100
+  },
+  "ai": {
+    "provider": "ollama",
+    "model": "gemma3:latest",
+    "endpoint": "http://localhost:11434"
+  },
+  "concurrency": 10,
+  "outputDir": ".ylog",
+  "generateContextFiles": true,
+  "contextFileThreshold": 50,
+  "historyMonths": 6,
+  "cacheDir": ".ylog/cache",
+  "diffMaxBytes": 1000000
+}
