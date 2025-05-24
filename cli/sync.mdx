@@ -1,0 +1,356 @@
+---
+title: 'ylog sync'
+description: 'Sync PR history and generate context files'
+---
+
+## Overview
+
+The `sync` command is the core of ylog - it fetches your GitHub PR history, processes it with AI, and generates both the SQLite database and context files.
+
+```bash
+ylog sync [options]
+```
+
+## Basic Usage
+
+<CodeGroup>
+
+```bash Simple sync
+# Sync all PRs with default settings
+ylog sync
+```
+
+```bash Dry run
+# See what would be synced without making changes
+ylog sync --dry-run
+```
+
+```bash Incremental sync  
+# Only process PRs since last sync
+ylog sync --since 2025-01-01
+```
+
+```bash Force resync
+# Re-process existing PRs (useful after config changes)
+ylog sync --force
+```
+
+</CodeGroup>
+
+## Options
+
+<ResponseField name="--dry-run" type="boolean" default="false">
+  Show what would be synced without making any changes to the database or context files.
+</ResponseField>
+
+<ResponseField name="--force" type="boolean" default="false">
+  Re-process existing PRs. Useful when you've changed AI providers or want to regenerate summaries.
+</ResponseField>
+
+<ResponseField name="--since" type="string">
+  Only process PRs merged after this date. Format: `YYYY-MM-DD` or ISO 8601.
+  
+  ```bash
+  ylog sync --since 2025-01-01
+  ylog sync --since 2025-05-24T10:30:00Z
+  ```
+</ResponseField>
+
+<ResponseField name="--pr" type="number[]">
+  Sync specific PR numbers only. Can be specified multiple times.
+  
+  ```bash
+  ylog sync --pr 123 --pr 456
+  ylog sync --pr 789
+  ```
+</ResponseField>
+
+<ResponseField name="--skip-ai" type="boolean" default="false">
+  Skip AI processing and only store raw PR data. Useful for testing or when AI is unavailable.
+</ResponseField>
+
+<ResponseField name="-c, --config" type="string">
+  Path to configuration file. Defaults to `ylog.config.js` in current directory.
+  
+  ```bash
+  ylog sync --config ./custom-config.js
+  ```
+</ResponseField>
+
+## Sync Process
+
+The sync command follows these phases:
+
+<Steps>
+  <Step title="Authentication">
+    Verifies GitHub token and repository access
+    ```
+    ✅ GitHub authentication verified  
+    ✅ Repository access confirmed (owner/repo)
+    ```
+  </Step>
+  <Step title="AI Connection">
+    Tests connection to your configured AI provider
+    ```
+    ✅ AI connection successful (ollama/llama3.2)
+    ✅ Model ready for processing
+    ```
+  </Step>
+  <Step title="PR Discovery">
+    Fetches PR list from GitHub with rate limiting
+    ```
+    📥 Fetching PRs... (127 found, 23 new)
+    📊 Date range: 2024-01-01 to 2025-05-24
+    ```
+  </Step>
+  <Step title="AI Processing">
+    Processes PRs in batches with progress tracking
+    ```
+    🤖 Processing with AI... [████████████████████] 23/23
+    💡 Generated summaries for 23 PRs
+    ⚠️  3 PRs failed AI processing (will retry)
+    ```
+  </Step>
+  <Step title="Database Storage">
+    Stores processed data in SQLite database
+    ```
+    💾 Storing in database...
+    📝 Inserted 23 PRs, 156 file changes, 23 summaries
+    ```
+  </Step>
+  <Step title="Context Generation">
+    Creates or updates .ylog context files
+    ```
+    📝 Generated 8 context files (skipped 12)
+    📁 Areas: src/auth, src/api, src/components, src/utils...
+    ```
+  </Step>
+</Steps>
+
+## Examples
+
+### First-time Setup
+
+```bash
+# After initial configuration
+ylog sync
+
+# Expected output:
+# 🔄 Starting sync for your-org/your-repo
+# ✅ GitHub authentication verified
+# ✅ AI connection successful (ollama/llama3.2)  
+# 📥 Fetching PRs... (284 found)
+# 🤖 Processing with AI... [████████████████████] 284/284
+# 💾 Storing in database...
+# 📝 Generated 15 context files (skipped 8)
+# ✅ Sync complete! Processed 284 PRs in 8m 42s
+```
+
+### Incremental Updates
+
+```bash
+# Daily/weekly updates to catch new PRs
+ylog sync
+
+# Expected output:
+# 🔄 Starting sync for your-org/your-repo
+# ✅ GitHub authentication verified
+# ✅ AI connection successful (ollama/llama3.2)
+# 📥 Fetching PRs... (289 found, 5 new)
+# 🤖 Processing with AI... [████████████████████] 5/5
+# 💾 Storing in database...
+# 📝 Updated 3 context files
+# ✅ Sync complete! Processed 5 PRs in 34s
+```
+
+### Debugging with Dry Run
+
+```bash
+ylog sync --dry-run
+
+# Expected output:
+# 🔍 DRY RUN - No changes will be made
+# ✅ GitHub authentication verified
+# ✅ AI connection successful
+# 📥 Would fetch PRs... (289 found, 5 new)
+# 🤖 Would process 5 PRs with AI
+# 💾 Would store in database: .ylog/prs.db
+# 📝 Would generate context files in: src/auth, src/api
+# ✅ Dry run complete - run without --dry-run to apply changes
+```
+
+### Re-processing After Config Changes
+
+```bash
+# After changing AI provider or model
+ylog sync --force
+
+# Expected output:
+# 🔄 Starting sync for your-org/your-repo (FORCE MODE)
+# ✅ GitHub authentication verified
+# ✅ AI connection successful (anthropic/claude-3-haiku)
+# 📥 Fetching PRs... (289 found, 289 to reprocess)
+# 🤖 Processing with AI... [████████████████████] 289/289
+# 💾 Storing in database...
+# 📝 Generated 15 context files (updated all)
+# ✅ Sync complete! Reprocessed 289 PRs in 12m 18s
+```
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="Rate Limiting">
+    ylog respects GitHub's rate limits automatically:
+    
+    ```javascript
+    // ylog.config.js
+    export default {
+      github: {
+        throttleRpm: 100  // Requests per minute (default)
+      }
+    };
+    ```
+    
+    - **Primary rate limit**: 5000 requests/hour for authenticated users
+    - **Secondary rate limit**: Triggered by rapid requests
+    - **Auto-retry**: Built-in exponential backoff
+  </Accordion>
+
+  <Accordion title="AI Processing Speed">
+    Processing speed depends on your AI provider:
+    
+    | Provider | Speed | Cost | Notes |
+    |----------|-------|------|-------|
+    | **Ollama (local)** | 2-10 PRs/min | Free | Depends on hardware |
+    | **Anthropic Claude** | 30-60 PRs/min | ~$0.01/PR | Network dependent |
+    
+    Use `--skip-ai` for faster syncing when AI summaries aren't needed.
+  </Accordion>
+
+  <Accordion title="Large Repositories">
+    For repositories with many PRs:
+    
+    ```bash
+    # Process in chunks
+    ylog sync --since 2024-01-01  # Recent PRs first
+    ylog sync --since 2023-01-01  # Then older ones
+    
+    # Or specific PRs
+    ylog sync --pr 100 --pr 200 --pr 300
+    ```
+    
+    The database handles incremental updates efficiently.
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+<AccordionGroup>
+  <Accordion title="GitHub Authentication Errors">
+    ```bash
+    ❌ GitHub authentication failed: Bad credentials
+    ```
+    
+    **Solutions:**
+    - Check your GitHub token: `echo $GITHUB_TOKEN`
+    - Verify token has `repo` scope
+    - Try using `gh auth token` if you have GitHub CLI
+    - See [Authentication Guide](/authentication/troubleshooting)
+  </Accordion>
+
+  <Accordion title="AI Processing Errors">
+    ```bash
+    ⚠️ AI processing failed for PR #123: Connection timeout
+    ```
+    
+    **Solutions:**
+    - Check AI provider is running (Ollama: `ollama list`)
+    - Verify API keys for cloud providers
+    - Try `--skip-ai` to sync without summaries
+    - Use `--pr 123` to retry specific PRs
+  </Accordion>
+
+  <Accordion title="Network/Timeout Errors">
+    ```bash
+    ❌ GitHub API error: timeout
+    ```
+    
+    **Solutions:**
+    - Reduce `throttleRpm` in config
+    - Use `--since` to process smaller batches
+    - Check your internet connection
+    - GitHub API may be experiencing issues
+  </Accordion>
+</AccordionGroup>
+
+## Integration with CI/CD
+
+### GitHub Actions
+
+```yaml
+name: Update Repository Context
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install ylog
+        run: npm install -g @graphite/ylog
+        
+      - name: Sync repository context
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ylog sync
+        
+      - name: Commit context files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add "**/*.ylog"
+          git diff --staged --quiet || git commit -m "Update context files [skip ci]"
+          git push
+```
+
+### Local Development
+
+```bash
+# Add to package.json scripts
+{
+  "scripts": {
+    "context:sync": "ylog sync",
+    "context:update": "ylog sync --since $(date -d '7 days ago' '+%Y-%m-%d')",
+    "context:force": "ylog sync --force"
+  }
+}
+
+# Usage
+npm run context:sync
+npm run context:update  # Weekly updates
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="ylog show" href="/cli/show">
+    Query and display synced PR data
+  </Card>
+  <Card title="ylog generate" href="/cli/generate">
+    Regenerate context files without full sync
+  </Card>
+  <Card title="ylog clean" href="/cli/clean">
+    Clean up databases and cache files
+  </Card>
+  <Card title="ylog init" href="/cli/init">
+    Initialize configuration file
+  </Card>
+</CardGroup>

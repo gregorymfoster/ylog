@@ -1,0 +1,367 @@
+---
+title: 'Authentication Overview'
+description: 'How ylog handles GitHub authentication with multiple token sources'
+---
+
+## Authentication Hierarchy
+
+ylog uses a smart authentication hierarchy that tries multiple sources for your GitHub token, making it easy to get started regardless of your setup:
+
+<Steps>
+  <Step title="Environment Variable">
+    ```bash
+    export GITHUB_TOKEN=ghp_your_token_here
+    ylog sync
+    ```
+    **Highest priority** - Explicit token override
+  </Step>
+  <Step title="Configuration File">
+    ```javascript
+    // ylog.config.js
+    export default {
+      github: {
+        token: 'ghp_your_token_here'
+      }
+    };
+    ```
+    **Direct configuration** - Stored in your config
+  </Step>
+  <Step title="GitHub CLI Token">
+    ```bash
+    gh auth status  # Check if logged in
+    ylog sync       # Automatically uses gh token
+    ```
+    **Seamless integration** - Leverage existing gh CLI auth
+  </Step>
+  <Step title="Interactive Prompt">
+    ```bash
+    ylog sync
+    # → "GitHub token not found. Please enter your PAT:"
+    ```
+    **Fallback option** - Manual token entry
+  </Step>
+</Steps>
+
+## Token Requirements
+
+Your GitHub Personal Access Token must have the following scopes:
+
+<AccordionGroup>
+  <Accordion title="repo (Required)">
+    **Full repository access**
+    
+    This scope is required to:
+    - Read pull request data
+    - Access file change information  
+    - Read pull request reviews and comments
+    - Access repository metadata
+    
+    ```bash
+    # ylog will validate this scope automatically
+    ylog sync
+    # ✅ GitHub authentication verified
+    # ✅ Repository access confirmed (owner/repo)
+    ```
+  </Accordion>
+
+  <Accordion title="Additional Scopes (Optional)">
+    **For enhanced functionality:**
+    
+    - `read:org` - If working with organization repositories
+    - `read:user` - For user information in summaries
+    
+    These are not required for basic ylog functionality.
+  </Accordion>
+</AccordionGroup>
+
+## Creating a GitHub Token
+
+<Steps>
+  <Step title="Access GitHub Settings">
+    Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+  </Step>
+  <Step title="Generate New Token">
+    Click "Generate new token" → "Generate new token (classic)"
+  </Step>
+  <Step title="Configure Token">
+    - **Note**: "ylog access for [your-repo]"
+    - **Expiration**: Choose based on your security policy
+    - **Scopes**: Select `repo` (full repository access)
+  </Step>
+  <Step title="Copy Token">
+    Copy the generated token (starts with `ghp_`)
+    
+    <Warning>
+    Save this token securely - GitHub won't show it again!
+    </Warning>
+  </Step>
+</Steps>
+
+## Authentication Methods
+
+<Tabs>
+  <Tab title="Environment Variable (Recommended)">
+    **Best for**: CI/CD, security-conscious users, multiple repositories
+    
+    ```bash
+    # Set in your shell profile (.bashrc, .zshrc)
+    export GITHUB_TOKEN=ghp_your_token_here
+    
+    # Or per-session
+    GITHUB_TOKEN=ghp_your_token_here ylog sync
+    ```
+    
+    **Pros:**
+    - No token in configuration files
+    - Works across all repositories
+    - Standard practice for secrets
+    - CI/CD friendly
+    
+    **Cons:**
+    - Must be set in each environment
+    - Can be forgotten or expire
+  </Tab>
+  
+  <Tab title="GitHub CLI Integration">
+    **Best for**: Existing gh CLI users, simple setup
+    
+    ```bash
+    # One-time setup
+    gh auth login
+    
+    # ylog automatically uses gh token
+    ylog sync
+    ```
+    
+    **Pros:**
+    - Zero additional setup
+    - Leverages existing authentication
+    - Handles token refresh automatically
+    - Familiar to GitHub CLI users
+    
+    **Cons:**
+    - Requires GitHub CLI installation
+    - May not work in all environments
+  </Tab>
+  
+  <Tab title="Configuration File">
+    **Best for**: Repository-specific tokens, team sharing
+    
+    ```javascript
+    // ylog.config.js
+    export default {
+      github: {
+        token: 'ghp_your_token_here',
+        repo: 'owner/repo'
+      }
+    };
+    ```
+    
+    **Pros:**
+    - Repository-specific configuration
+    - Easy to share with team
+    - Explicit and visible
+    
+    **Cons:**
+    - Token visible in configuration
+    - Must be careful with git commits
+    - Security considerations
+  </Tab>
+  
+  <Tab title="CLI Flag">
+    **Best for**: Testing, one-off usage
+    
+    ```bash
+    ylog sync --github-token ghp_your_token_here
+    ```
+    
+    **Pros:**
+    - Explicit and temporary
+    - Good for testing
+    - No persistent storage
+    
+    **Cons:**
+    - Token visible in shell history
+    - Must specify every time
+    - Not practical for regular use
+  </Tab>
+</Tabs>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Token Storage">
+    **DO:**
+    - Use environment variables for production
+    - Store tokens in secure credential managers
+    - Use GitHub CLI for development
+    - Set appropriate token expiration
+    
+    **DON'T:**
+    - Commit tokens to git repositories
+    - Share tokens in chat or email
+    - Use overly broad token scopes
+    - Store tokens in plain text files
+  </Accordion>
+
+  <Accordion title="Token Scope Principle">
+    **Minimum Required Scope:**
+    ```
+    ✅ repo (required for ylog)
+    ❌ admin:org (too broad)
+    ❌ delete_repo (unnecessary)
+    ```
+    
+    ylog only needs `repo` scope for basic functionality.
+  </Accordion>
+
+  <Accordion title="Token Rotation">
+    **Regular rotation recommendations:**
+    - **Personal projects**: 90 days
+    - **Team projects**: 30-60 days  
+    - **CI/CD**: 30 days or less
+    
+    ```bash
+    # Test new token before rotating
+    GITHUB_TOKEN=ghp_new_token ylog sync --dry-run
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting Authentication
+
+<AccordionGroup>
+  <Accordion title="Authentication Failed">
+    ```bash
+    ❌ GitHub authentication failed: Bad credentials
+    ```
+    
+    **Causes & Solutions:**
+    1. **Invalid token**: Check token is copied correctly
+    2. **Expired token**: Generate a new token
+    3. **Insufficient scope**: Ensure `repo` scope is selected
+    4. **Wrong repository**: Verify repository name in config
+  </Accordion>
+
+  <Accordion title="Repository Access Denied">
+    ```bash
+    ❌ Repository "owner/repo" not found or token lacks "repo" scope
+    ```
+    
+    **Causes & Solutions:**
+    1. **Private repository**: Token needs `repo` scope
+    2. **Wrong repository name**: Check owner/repo format
+    3. **No repository access**: Ensure you have access to the repository
+    4. **Organization restrictions**: Check if organization allows personal tokens
+  </Accordion>
+
+  <Accordion title="Rate Limit Issues">
+    ```bash
+    ⚠️ Rate limit hit, retrying after 60 seconds...
+    ```
+    
+    **Causes & Solutions:**
+    1. **Shared token**: Multiple tools using same token
+    2. **High request rate**: Reduce `throttleRpm` in config
+    3. **Large repository**: Use `--since` to process in chunks
+    4. **GitHub API issues**: Wait and retry later
+  </Accordion>
+</AccordionGroup>
+
+## Testing Authentication
+
+Verify your authentication setup:
+
+```bash
+# Test authentication only
+ylog sync --dry-run
+
+# Expected output:
+# ✅ GitHub authentication verified
+# ✅ Repository access confirmed (owner/repo)
+# 🔍 DRY RUN - No changes will be made
+```
+
+## Multiple Repository Setup
+
+For teams working with multiple repositories:
+
+```bash
+# Repository-specific tokens
+cd project-a
+export GITHUB_TOKEN=$PROJECT_A_TOKEN
+ylog sync
+
+cd ../project-b  
+export GITHUB_TOKEN=$PROJECT_B_TOKEN
+ylog sync
+
+# Or use configuration files
+echo 'export default { github: { token: "ghp_project_a_token" } }' > project-a/ylog.config.js
+echo 'export default { github: { token: "ghp_project_b_token" } }' > project-b/ylog.config.js
+```
+
+## CI/CD Integration
+
+<CodeGroup>
+
+```yaml GitHub Actions
+name: Update Context
+on: [push]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync ylog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm install -g @graphite/ylog
+          ylog sync
+```
+
+```yaml GitLab CI
+update-context:
+  script:
+    - npm install -g @graphite/ylog
+    - ylog sync
+  variables:
+    GITHUB_TOKEN: $CI_GITHUB_TOKEN
+```
+
+```bash Jenkins
+pipeline {
+  environment {
+    GITHUB_TOKEN = credentials('github-token')
+  }
+  stages {
+    stage('Update Context') {
+      steps {
+        sh 'npm install -g @graphite/ylog'
+        sh 'ylog sync'
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="GitHub Token Setup" href="/authentication/github-token">
+    Detailed guide for creating and configuring GitHub tokens
+  </Card>
+  <Card title="Troubleshooting" href="/authentication/troubleshooting">
+    Common authentication issues and solutions
+  </Card>
+  <Card title="Configuration" href="/configuration/github">
+    GitHub-specific configuration options
+  </Card>
+  <Card title="Quick Start" href="/quickstart">
+    Get up and running with ylog
+  </Card>
+</CardGroup>

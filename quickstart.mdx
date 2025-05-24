@@ -1,0 +1,238 @@
+---
+title: 'Quickstart'
+description: 'Get ylog running in your repository in under 5 minutes'
+---
+
+## Installation
+
+Get started by installing ylog globally or using npx:
+
+<CodeGroup>
+
+```bash npm
+npm install -g @graphite/ylog
+```
+
+```bash npx
+npx @graphite/ylog --help
+```
+
+```bash yarn
+yarn global add @graphite/ylog
+```
+
+</CodeGroup>
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+<AccordionGroup>
+  <Accordion title="Node.js 20+">
+    ylog requires Node.js version 20 or higher. Check your version:
+    ```bash
+    node --version
+    ```
+  </Accordion>
+
+  <Accordion title="GitHub Personal Access Token">
+    You'll need a GitHub PAT with `repo` scope. Create one at [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens).
+    
+    Required scopes:
+    - `repo` (for accessing repository data)
+  </Accordion>
+
+  <Accordion title="AI Provider">
+    Choose one:
+    - **Ollama** (local, free): Install from [ollama.ai](https://ollama.ai)
+    - **Anthropic Claude** (cloud, paid): Get API key from [console.anthropic.com](https://console.anthropic.com)
+  </Accordion>
+</AccordionGroup>
+
+## Quick Setup
+
+### Step 1: Initialize Configuration
+
+Navigate to your repository and initialize ylog:
+
+```bash
+cd your-repository
+ylog init
+```
+
+This creates a `ylog.config.js` file with sensible defaults:
+
+```javascript
+export default {
+  github: {
+    repo: 'your-org/your-repo',  // Auto-detected
+    throttleRpm: 100
+  },
+  ai: {
+    provider: 'ollama',
+    model: 'llama3.2',
+    endpoint: 'http://localhost:11434'
+  },
+  generateContextFiles: true,
+  contextFileThreshold: 3,
+  historyMonths: 6
+};
+```
+
+### Step 2: Set Up Authentication
+
+<Tabs>
+  <Tab title="Environment Variable (Recommended)">
+    ```bash
+    export GITHUB_TOKEN=ghp_your_token_here
+    ```
+  </Tab>
+  <Tab title="Use Existing gh CLI">
+    If you already use GitHub CLI:
+    ```bash
+    gh auth status  # Verify you're logged in
+    # ylog will automatically use your gh token
+    ```
+  </Tab>
+  <Tab title="Config File">
+    Add to your `ylog.config.js`:
+    ```javascript
+    export default {
+      github: {
+        token: 'ghp_your_token_here',
+        // ... other config
+      }
+    };
+    ```
+  </Tab>
+</Tabs>
+
+### Step 3: Set Up AI Provider
+
+<Tabs>
+  <Tab title="Ollama (Local)">
+    1. Install Ollama from [ollama.ai](https://ollama.ai)
+    2. Pull a model:
+    ```bash
+    ollama pull llama3.2
+    ```
+    3. Your config is already set for Ollama by default
+  </Tab>
+  <Tab title="Anthropic Claude">
+    Update your `ylog.config.js`:
+    ```javascript
+    export default {
+      ai: {
+        provider: 'anthropic',
+        model: 'claude-3-haiku-20240307',
+        apiKey: 'sk-your-api-key-here'
+      }
+      // ... other config
+    };
+    ```
+  </Tab>
+</Tabs>
+
+### Step 4: Sync Your Repository
+
+Run your first sync to process your PR history:
+
+```bash
+ylog sync
+```
+
+<Info>
+The first sync might take a few minutes depending on your repository size. ylog processes PRs in batches and respects GitHub's rate limits.
+</Info>
+
+You'll see progress output like:
+
+```
+🔄 Starting sync for your-org/your-repo
+✅ GitHub authentication verified
+✅ AI connection successful (ollama/llama3.2)
+📥 Fetching PRs... (50 found)
+🤖 Processing with AI... [████████████████████] 50/50
+💾 Storing in database...
+📝 Generated 12 context files (skipped 3)
+✅ Sync complete! Processed 50 PRs in 2m 34s
+```
+
+## Explore Your Results
+
+### View PR History
+
+```bash
+# See recent PRs
+ylog show
+
+# Filter by author
+ylog show --author alice
+
+# Show PRs affecting specific area
+ylog show --area src/auth
+
+# JSON output for tooling
+ylog show --format json --limit 5
+```
+
+### Browse Context Files
+
+ylog creates `.ylog` files throughout your codebase:
+
+```bash
+# Check what context files were created
+find . -name "*.ylog" -type f
+
+# View a context file
+cat src/auth/.ylog
+```
+
+### Generate Additional Context
+
+```bash
+# Regenerate all context files
+ylog generate
+
+# Regenerate specific area
+ylog generate src/components
+```
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card
+    title="Configuration Guide"
+    icon="gear"
+    href="/configuration/overview"
+  >
+    Customize ylog for your workflow
+  </Card>
+  <Card
+    title="CLI Reference"
+    icon="terminal"
+    href="/cli/overview"
+  >
+    Explore all available commands
+  </Card>
+  <Card
+    title="Use Cases"
+    icon="lightbulb"
+    href="/use-cases/overview"
+  >
+    See how teams use ylog
+  </Card>
+  <Card
+    title="Troubleshooting"
+    icon="wrench"
+    href="/troubleshooting"
+  >
+    Common issues and solutions
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+<Tip>
+Need help? Check out our [GitHub Discussions](https://github.com/gregorymfoster/ylog/discussions) or open an issue on [GitHub](https://github.com/gregorymfoster/ylog/issues).
+</Tip>

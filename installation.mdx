@@ -1,0 +1,295 @@
+---
+title: 'Installation'
+description: 'Different ways to install and set up ylog'
+---
+
+## Package Managers
+
+ylog is distributed as an npm package and can be installed using any Node.js package manager.
+
+<CodeGroup>
+
+```bash npm
+# Global installation (recommended)
+npm install -g @graphite/ylog
+
+# Project-specific installation
+npm install --save-dev @graphite/ylog
+```
+
+```bash yarn
+# Global installation
+yarn global add @graphite/ylog
+
+# Project-specific installation
+yarn add --dev @graphite/ylog
+```
+
+```bash pnpm
+# Global installation
+pnpm add -g @graphite/ylog
+
+# Project-specific installation
+pnpm add -D @graphite/ylog
+```
+
+```bash npx
+# Run without installing
+npx @graphite/ylog --help
+```
+
+</CodeGroup>
+
+## System Requirements
+
+<AccordionGroup>
+  <Accordion title="Node.js Version">
+    **Minimum**: Node.js 20.0.0 or higher
+    
+    Check your version:
+    ```bash
+    node --version
+    ```
+    
+    If you need to upgrade, consider using [nvm](https://github.com/nvm-sh/nvm):
+    ```bash
+    nvm install 20
+    nvm use 20
+    ```
+  </Accordion>
+
+  <Accordion title="Operating System">
+    ylog supports all major operating systems:
+    - **macOS**: 10.15+ (Intel and Apple Silicon)
+    - **Linux**: Ubuntu 18.04+, CentOS 7+, or equivalent
+    - **Windows**: Windows 10+ (with WSL recommended)
+  </Accordion>
+
+  <Accordion title="Memory Requirements">
+    - **Minimum**: 512MB available RAM
+    - **Recommended**: 1GB+ for large repositories (1000+ PRs)
+    - **Storage**: ~50MB for the CLI + database storage for your PR data
+  </Accordion>
+</AccordionGroup>
+
+## Verification
+
+After installation, verify ylog is working correctly:
+
+```bash
+# Check version
+ylog --version
+
+# View help
+ylog --help
+
+# Test in a git repository
+cd your-repository
+ylog init --help
+```
+
+Expected output:
+```
+Usage: ylog init [options]
+
+Initialize ylog configuration
+
+Options:
+  -f, --force            Overwrite existing configuration
+  --provider <provider>  AI provider (ollama|anthropic) (default: "ollama")
+  --model <model>        AI model name (default: "llama3.2")
+  -h, --help             display help for command
+```
+
+## Development Installation
+
+If you want to contribute to ylog or run from source:
+
+<Steps>
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/gregorymfoster/ylog.git
+    cd ylog
+    ```
+  </Step>
+  <Step title="Install Dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+  <Step title="Build">
+    ```bash
+    npm run build
+    ```
+  </Step>
+  <Step title="Link Globally">
+    ```bash
+    npm link
+    ```
+  </Step>
+  <Step title="Verify">
+    ```bash
+    ylog --version
+    ```
+  </Step>
+</Steps>
+
+## Docker Installation
+
+For containerized environments, you can use ylog with Docker:
+
+```dockerfile
+FROM node:20-alpine
+
+# Install ylog globally
+RUN npm install -g @graphite/ylog
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy your repository
+COPY . .
+
+# Run ylog
+CMD ["ylog", "sync"]
+```
+
+Build and run:
+
+```bash
+docker build -t ylog-runner .
+docker run -e GITHUB_TOKEN=$GITHUB_TOKEN ylog-runner
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+
+```yaml
+name: Update Repository Context
+on:
+  push:
+    branches: [main]
+
+jobs:
+  update-context:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install ylog
+        run: npm install -g @graphite/ylog
+        
+      - name: Sync repository context
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ylog sync
+        
+      - name: Commit context files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add "**/*.ylog"
+          git diff --staged --quiet || git commit -m "Update context files [skip ci]"
+          git push
+```
+
+### GitLab CI
+
+```yaml
+update-context:
+  stage: build
+  image: node:20-alpine
+  before_script:
+    - npm install -g @graphite/ylog
+  script:
+    - ylog sync
+    - git add "**/*.ylog"
+    - git diff --staged --quiet || (git commit -m "Update context files [skip ci]" && git push)
+  variables:
+    GITHUB_TOKEN: $CI_GITHUB_TOKEN
+  only:
+    - main
+```
+
+## Troubleshooting Installation
+
+<AccordionGroup>
+  <Accordion title="Permission Errors (npm)">
+    If you get permission errors installing globally:
+    
+    **Option 1: Use npx** (recommended)
+    ```bash
+    npx @graphite/ylog --help
+    ```
+    
+    **Option 2: Configure npm prefix**
+    ```bash
+    mkdir ~/.npm-global
+    npm config set prefix '~/.npm-global'
+    echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+    
+    **Option 3: Use sudo** (not recommended)
+    ```bash
+    sudo npm install -g @graphite/ylog
+    ```
+  </Accordion>
+
+  <Accordion title="Node.js Version Issues">
+    If you get "unsupported engine" errors:
+    
+    1. Check your Node.js version: `node --version`
+    2. Upgrade to Node.js 20+:
+       - **Using nvm**: `nvm install 20 && nvm use 20`
+       - **Direct download**: [nodejs.org](https://nodejs.org)
+       - **Package manager**: `brew install node` (macOS) or `apt install nodejs npm` (Ubuntu)
+  </Accordion>
+
+  <Accordion title="Command Not Found">
+    If `ylog` command isn't found after installation:
+    
+    1. **Global installation**: Ensure npm's global bin directory is in your PATH
+       ```bash
+       npm config get prefix
+       echo $PATH
+       ```
+    
+    2. **Project installation**: Use npx or npm scripts
+       ```bash
+       npx ylog --help
+       # or in package.json scripts
+       "scripts": { "ylog": "ylog" }
+       npm run ylog -- --help
+       ```
+  </Accordion>
+
+  <Accordion title="Network/Proxy Issues">
+    If installation fails due to network issues:
+    
+    ```bash
+    # Configure npm proxy
+    npm config set proxy http://proxy.company.com:8080
+    npm config set https-proxy http://proxy.company.com:8080
+    
+    # Or use different registry
+    npm install -g @graphite/ylog --registry https://registry.npmjs.org
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+Once ylog is installed successfully:
+
+<Card
+  title="Quick Start Guide"
+  icon="play"
+  href="/quickstart"
+>
+  Set up ylog in your first repository
+</Card>
