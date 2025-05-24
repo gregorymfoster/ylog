@@ -10,6 +10,10 @@ import { QuestionGenerator } from '../agents/question-generator.js'
 import { AnswerProcessor } from '../agents/answer-processor.js'
 import { InteractiveSession } from '../cli/interactive.js'
 import { OutputFormatter } from '../utils/formatting.js'
+import { SQLiteKnowledgeStorage } from './knowledge-storage.js'
+import { KnowledgeSynthesizer } from './knowledge-synthesis.js'
+import { KnowledgeSearchEngine } from './knowledge-search.js'
+import { AIProvider } from './ai.js'
 import {
   SessionContext,
   UserPreferences,
@@ -23,6 +27,10 @@ import {
   UserResponse,
   ProcessedAnswer
 } from '../types/questions.js'
+import {
+  KnowledgeBase,
+  SynthesisResult
+} from '../types/knowledge.js'
 
 export class SessionManager {
   private config: ResolvedYlog2Config
@@ -30,7 +38,19 @@ export class SessionManager {
   private questionGenerator: QuestionGenerator
   private answerProcessor: AnswerProcessor
   private formatter: OutputFormatter
+  private knowledgeStorage: SQLiteKnowledgeStorage
+  private knowledgeSynthesizer: KnowledgeSynthesizer
+  private knowledgeSearch: KnowledgeSearchEngine
+  private aiProvider: AIProvider
   private sessionData: Map<string, any> = new Map()
+  private sessionResponses: Array<{
+    questionId: string
+    answerId: string
+    question: string
+    answer: string
+    insights: string[]
+    timestamp: Date
+  }> = []
 
   constructor(config: ResolvedYlog2Config) {
     this.config = config
@@ -39,8 +59,26 @@ export class SessionManager {
     this.answerProcessor = new AnswerProcessor(config)
     this.formatter = new OutputFormatter()
     
+    // Initialize knowledge system
+    this.aiProvider = new AIProvider(config)
+    this.knowledgeStorage = new SQLiteKnowledgeStorage(
+      join(config.outputDir, 'knowledge', 'knowledge.db')
+    )
+    this.knowledgeSynthesizer = new KnowledgeSynthesizer(this.aiProvider)
+    this.knowledgeSearch = new KnowledgeSearchEngine(this.knowledgeStorage, this.aiProvider)
+    
     // Ensure data directory exists
     this.ensureDataDirectory()
+    this.initializeKnowledgeSystem()
+  }
+
+  private async initializeKnowledgeSystem(): Promise<void> {
+    try {
+      await this.knowledgeStorage.initialize()
+      await this.knowledgeSearch.initialize()
+    } catch (error) {
+      console.warn('Knowledge system initialization failed:', error)
+    }
   }
 
   /**
@@ -196,6 +234,21 @@ export class SessionManager {
           this.updateSessionProgress(context, question, response)
         ])
         
+        // Store response for knowledge synthesis
+        this.sessionResponses.push({
+          questionId: question.id,
+          answerId: response.id,
+          question: question.text,
+          answer: response.answer,
+          insights: processedAnswer.insights,
+          timestamp: new Date()
+        })
+        
+        // Perform knowledge synthesis every 3 questions
+        if (context.questionsAnswered % 3 === 0) {
+          await this.performKnowledgeSynthesis(context, interactive)
+        }
+        
         // Show impact and progress
         this.showProgressUpdate(interactive, context, processedAnswer)
         
@@ -270,6 +323,81 @@ export class SessionManager {
   }
 
   /**
+   * Perform knowledge synthesis from recent Q&A responses
+   */
+  private async performKnowledgeSynthesis(
+    context: SessionContext,
+    interactive: InteractiveSession
+  ): Promise<void> {
+    if (this.sessionResponses.length === 0) return
+
+    try {
+      interactive.showLoading('Synthesizing knowledge from your responses')
+      
+      // Get existing knowledge for context
+      const existingKnowledge = await this.knowledgeStorage.load()
+      const existingInsights = existingKnowledge?.insights || []
+      
+      // Perform synthesis
+      const synthesisResult = await this.knowledgeSynthesizer.synthesizeFromSession(
+        context.sessionId,
+        this.sessionResponses,
+        {
+          files: context.areasExplored,
+          functions: [], // Could extract from responses
+          changes: []
+        },
+        existingInsights
+      )
+      
+      // Store new knowledge
+      await this.storeKnowledgeSynthesis(synthesisResult)
+      
+      // Update knowledge progress
+      context.knowledgeProgress.insightsGenerated += synthesisResult.newInsights.length
+      
+      interactive.clearLoading()
+      
+      // Show synthesis results to user
+      if (synthesisResult.newInsights.length > 0 || synthesisResult.newDecisions.length > 0) {
+        interactive.showKnowledgeSynthesis(synthesisResult)
+      }
+      
+      // Refresh search index
+      await this.knowledgeSearch.refresh()
+      
+    } catch (error) {
+      interactive.clearLoading()
+      console.warn('Knowledge synthesis failed:', error)
+    }
+  }
+
+  /**
+   * Store synthesis results in knowledge base
+   */
+  private async storeKnowledgeSynthesis(result: SynthesisResult): Promise<void> {
+    try {
+      // Store insights
+      for (const insight of result.newInsights) {
+        await this.knowledgeStorage.addInsight(insight)
+      }
+      
+      // Store decisions
+      for (const decision of result.newDecisions) {
+        await this.knowledgeStorage.addDecision(decision)
+      }
+      
+      // Store business context
+      for (const context of result.newContext) {
+        await this.knowledgeStorage.addContext(context)
+      }
+      
+    } catch (error) {
+      console.warn('Failed to store knowledge synthesis:', error)
+    }
+  }
+
+  /**
    * Update session progress after answering a question
    */
   private async updateSessionProgress(
@@ -296,9 +424,6 @@ export class SessionManager {
       context.knowledgeProgress.coveragePercentage = 
         (context.areasExplored.length / context.knowledgeProgress.totalAreas) * 100
     }
-    
-    // Increment insights (simplified - real implementation would track actual insights)
-    context.knowledgeProgress.insightsGenerated++
   }
 
   /**
@@ -419,6 +544,82 @@ export class SessionManager {
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true })
       }
+    }
+  }
+
+  /**
+   * Search knowledge base
+   */
+  async searchKnowledge(
+    query: string,
+    options?: {
+      type?: ('insight' | 'decision' | 'context')[]
+      area?: string
+      limit?: number
+    }
+  ) {
+    try {
+      return await this.knowledgeSearch.search(query, {
+        type: options?.type || ['insight', 'decision', 'context'],
+        area: options?.area,
+        limit: options?.limit || 10,
+        semantic: true
+      })
+    } catch (error) {
+      console.warn('Knowledge search failed:', error)
+      return []
+    }
+  }
+
+  /**
+   * Get knowledge recommendations based on current context
+   */
+  async getKnowledgeRecommendations(area?: string) {
+    try {
+      const recentQuestions = this.sessionResponses
+        .slice(-5)
+        .map(r => r.question)
+      
+      return await this.knowledgeSearch.getRecommendations(area, recentQuestions)
+    } catch (error) {
+      console.warn('Failed to get knowledge recommendations:', error)
+      return {
+        insights: [],
+        decisions: [],
+        patterns: [],
+        suggestions: []
+      }
+    }
+  }
+
+  /**
+   * Get knowledge metrics
+   */
+  async getKnowledgeMetrics() {
+    try {
+      return await this.knowledgeStorage.getMetrics()
+    } catch (error) {
+      console.warn('Failed to get knowledge metrics:', error)
+      return {
+        totalQuestions: 0,
+        totalInsights: 0,
+        totalDecisions: 0,
+        averageConfidence: 0,
+        coverageByArea: new Map(),
+        activityByDay: new Map(),
+        topContributors: []
+      }
+    }
+  }
+
+  /**
+   * Clean up resources
+   */
+  async cleanup(): Promise<void> {
+    try {
+      await this.knowledgeStorage.cleanup()
+    } catch (error) {
+      console.warn('Failed to cleanup knowledge storage:', error)
     }
   }
 

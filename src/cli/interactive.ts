@@ -12,6 +12,9 @@ import {
   SessionContext,
   KnowledgeProgress
 } from '../types/core.js'
+import {
+  SynthesisResult
+} from '../types/knowledge.js'
 
 export class InteractiveSession {
   private formatter: OutputFormatter
@@ -351,6 +354,42 @@ export class InteractiveSession {
     console.log('• Mention business requirements or user needs that influenced you')
     console.log('• Share alternatives you considered and why you chose this approach')
     console.log('• Include any trade-offs or compromises you had to make')
+    console.log()
+  }
+
+  /**
+   * Show knowledge synthesis results
+   */
+  showKnowledgeSynthesis(result: SynthesisResult): void {
+    console.log()
+    console.log(this.formatter.formatSuccess('🧠 Knowledge Synthesized!'))
+    console.log()
+    
+    if (result.newInsights.length > 0) {
+      console.log(this.formatter.formatHighlight(`💡 ${result.newInsights.length} new insights discovered:`))
+      for (const insight of result.newInsights.slice(0, 3)) {
+        console.log(`• ${insight.topic}: ${insight.insight.substring(0, 100)}${insight.insight.length > 100 ? '...' : ''}`)
+      }
+      console.log()
+    }
+    
+    if (result.newDecisions.length > 0) {
+      console.log(this.formatter.formatHighlight(`🏗️  ${result.newDecisions.length} architectural decisions captured:`))
+      for (const decision of result.newDecisions.slice(0, 2)) {
+        console.log(`• ${decision.decision.substring(0, 100)}${decision.decision.length > 100 ? '...' : ''}`)
+      }
+      console.log()
+    }
+    
+    if (result.newContext.length > 0) {
+      console.log(this.formatter.formatHighlight(`🎯 ${result.newContext.length} business context items added:`))
+      for (const context of result.newContext.slice(0, 2)) {
+        console.log(`• ${context.requirement.substring(0, 100)}${context.requirement.length > 100 ? '...' : ''}`)
+      }
+      console.log()
+    }
+    
+    console.log(this.formatter.formatInfo(`⚡ Synthesis completed in ${result.processingTime}ms with ${Math.round(result.confidence * 100)}% confidence`))
     console.log()
   }
 }
