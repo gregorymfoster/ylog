@@ -1,0 +1,267 @@
+# ylog - GitHub PR History to Context CLI Tool
+
+## Project Overview
+A TypeScript CLI tool that converts GitHub PR history into structured context for LLMs.
+
+### Core Functionality
+1. Auto-detect GitHub repo from git remote
+2. Fetch PR data via GitHub CLI (`gh`)
+3. Summarize PRs using AI (Ollama or Anthropic via Vercel AI SDK)  
+4. Store results in local SQLite database (./ylog/prs.db)
+
+## Architecture & Design Principles
+
+### Project Structure (Simplified for MVP)
+```
+src/
+├── cli/           # Commands (init, sync)
+├── core/          # Main business logic  
+├── adapters/      # aiClient.ts, ghClient.ts
+├── storage/       # SQLite database operations
+└── types/         # Type definitions
+```
+
+### Key Technologies
+- **AI Integration**: Vercel AI SDK (`ai` + `@ai-sdk/anthropic` + `ollama-ai-provider`)
+- **Database**: better-sqlite3 for local storage
+- **CLI**: commander.js for command interface
+- **Validation**: Zod for configuration validation
+- **Build**: tsup + tsx for development
+- **Testing**: vitest with simple approach (unit tests + one integration test)
+
+## Code Style Guidelines
+
+### TypeScript Standards
+- Use `type` declarations over `interface` declarations
+- Target Node.js 20+ (ES2022, NodeNext modules)
+- Use `.js` extensions in relative imports (ES module standard)
+- All functions should have explicit return types
+
+### Naming Conventions
+- **Folders**: kebab-case (e.g., `src/adapters/`)
+- **Files**: camelCase (e.g., `aiClient.ts`)
+- **Variables/Functions**: camelCase
+- **Types**: PascalCase
+- **Constants**: SCREAMING_SNAKE_CASE
+
+### Programming Paradigm
+- **Functional programming preferred** over OOP
+- **No classes or inheritance** - use pure functions and composition
+- **No `this` keyword**
+- **No global state** - pass execution context as parameters
+- **Simple error handling** - try/catch instead of Result patterns for MVP
+- **Minimal dependency injection** - only where needed for testing
+
+### Code Organization
+- Each file should have a companion `.test.ts` file in the same directory
+- Keep functions pure when possible
+- Use composition over inheritance
+- Prefer explicit over implicit behavior
+
+## Configuration Management
+
+### Default Configuration Structure
+```typescript
+type YlogConfig = {
+  github?: {
+    repo?: string; // Auto-detect from git remote if not provided
+    throttleRpm?: number; // Default 100
+  };
+  ai: {
+    provider: 'ollama' | 'anthropic';
+    model: string;
+    apiKey?: string; // For Anthropic
+    endpoint?: string; // For Ollama, default 'http://localhost:11434'
+    maxTokens?: number; // Default 100
+  };
+  concurrency?: number; // Default 10
+  outputFile?: string; // Default './ylog/prs.db'
+  cacheDir?: string; // Default '~/.ylog-cache'
+  diffMaxBytes?: number; // Default 1MB
+};
+```
+
+## Data Models
+
+### SQLite Schema
+```sql
+CREATE TABLE prs (
+  number INTEGER PRIMARY KEY,
+  merged_at TEXT,
+  author TEXT,
+  title TEXT,
+  why TEXT,
+  areas TEXT, -- JSON array as text
+  files TEXT, -- JSON array as text  
+  diff_add INTEGER,
+  diff_del INTEGER,
+  comments INTEGER
+);
+```
+
+### GitHub PR Data (Raw Cache)
+```typescript
+type RawPR = {
+  number: number;
+  title: string;
+  body: string;
+  author: { login: string };
+  mergedAt: string;
+  files: Array<{ path: string }>;
+  comments: Array<{ body: string }>;
+  patch: string; // truncated if > diffMaxBytes
+};
+```
+
+## Implementation Guidelines
+
+### AI Integration (Vercel AI SDK)
+```typescript
+import { generateText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+import { createOllama } from 'ollama-ai-provider';
+
+// Unified interface for both providers
+const createAIClient = (config: YlogConfig['ai']) => {
+  if (config.provider === 'anthropic') {
+    return anthropic({ apiKey: config.apiKey })(config.model);
+  }
+  
+  const ollama = createOllama({
+    baseURL: config.endpoint || 'http://localhost:11434/api',
+  });
+  
+  return ollama(config.model);
+};
+```
+
+### SQLite Operations
+```typescript
+import Database from 'better-sqlite3';
+
+// ACID transactions eliminate need for atomic file operations
+// Use prepared statements for performance
+// Simple queries: SELECT MAX(number) FROM prs for resumability
+```
+
+### GitHub Integration
+```typescript
+// Use execa to call gh CLI
+// Auto-detect repo: git remote get-url origin
+// Rate limiting with exponential backoff
+// Cache raw PR data outside repo (in ~/.ylog-cache)
+```
+
+## Error Handling Strategy
+
+### Pre-flight Checks (Fail Fast)
+- Ensure `gh` CLI installed and authenticated
+- Ensure AI provider accessible (Ollama running or Anthropic API key valid)
+- Auto-detect GitHub repo from git remote
+- Verify Node ≥ 20
+
+### Runtime Error Handling
+- Simple try/catch blocks (no Result pattern for MVP)
+- Idempotent operations - safe to restart anytime
+- Graceful degradation on network failures
+- Comprehensive logging for debugging
+
+## Testing Approach (Simplified for MVP)
+
+### Testing Strategy
+- **Unit tests**: Core logic with mocked dependencies
+- **One integration test**: Full sync with real OSS repo (e.g., microsoft/vscode)
+- **No complex test matrices** - keep it simple for weekend shipping
+
+### Test Organization
+- Tests live next to source files (`file.ts` + `file.test.ts`)
+- Use vitest for fast test execution
+- Mock external dependencies (gh CLI, AI providers, file system)
+
+## Development Workflow
+
+### Commands
+```bash
+npm run dev           # Run CLI locally
+npm run dev:watch     # Development with auto-reload
+npm run test          # Unit tests
+npm run test:integration # Integration test
+npm run lint          # oxlint (fast Rust-based linting)
+npm run typecheck     # TypeScript validation
+npm run ci            # Full pipeline: lint + typecheck + test + build
+```
+
+### Git Workflow
+- Pre-commit hooks run lint + typecheck + test automatically
+- Use conventional commit messages when possible
+- Keep commits focused and atomic
+
+## Security Considerations
+
+- **API keys**: Store in environment variables, not config files
+- **Raw cache**: Lives outside repo to avoid accidental commits
+- **Summaries**: May leak sensitive insights - warn users appropriately
+
+## Future Extensibility
+
+### Phase 2+ Features (Not for MVP)
+- Query interface: "show me all auth-related PRs" via SQL
+- Additional AI providers (OpenAI, etc.)
+- Vector embeddings for semantic search
+- Markdown wiki generation per area
+- VS Code integration
+
+### Design for Extension
+- Vercel AI SDK makes adding new providers trivial
+- SQLite enables rich querying capabilities
+- Modular architecture supports feature additions
+
+## Common Patterns to Follow
+
+### Configuration Loading
+```typescript
+// Use Zod for validation with detailed error messages
+// Support environment variable substitution
+// Provide sensible defaults for optional fields
+```
+
+### Async Operations
+```typescript
+// Use p-limit for bounded concurrency
+// Handle rate limiting with exponential backoff
+// Make all operations resumable and idempotent
+```
+
+### Prompt Engineering
+```typescript
+// Focus prompts on "WHY" with enough "WHAT" for code linking
+// Handle minimal PR descriptions gracefully
+// Keep prompts concise to respect token limits
+```
+
+## Performance Considerations
+
+- **SQLite**: Fast local database with ACID properties
+- **oxlint**: ~100x faster than ESLint for linting
+- **Vercel AI SDK**: Optimized for performance and reliability
+- **Bounded concurrency**: Respect API rate limits
+- **Caching**: Avoid re-fetching already processed PRs
+
+## Dependencies Management
+
+### Core Dependencies
+- `ai`, `@ai-sdk/anthropic`, `ollama-ai-provider` for AI
+- `better-sqlite3` for database  
+- `commander` for CLI
+- `zod` for validation
+- `execa` for subprocess execution
+- `p-limit` for concurrency control
+
+### Development Dependencies
+- `oxlint` for fast linting
+- `vitest` for testing
+- `tsx` for development
+- `tsup` for building
+- `husky` for git hooks
+
+Keep dependencies minimal and well-justified. Prefer battle-tested libraries over cutting-edge ones for stability.

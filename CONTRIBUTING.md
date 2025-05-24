@@ -22,11 +22,52 @@ Thank you for considering contributing to ylog! This document outlines the guide
 - No global state; pass execution context as parameters
 - Use composition over inheritance
 - Functions should be pure when possible
+- Use `type` declarations over `interface` declarations
+- Use Result/Either pattern for error handling instead of throwing
+- Implement dependency injection for testability
 
 ### Testing
+
+**Test Organization:**
 - Tests should live next to the files they're testing (`file.ts` and `file.test.ts`)
 - Use vitest for writing tests
 - Aim for high test coverage, especially for core functionality
+
+**Testing Layers:**
+1. **Unit Tests**: Fast, isolated with mocked dependencies
+   - Mock external dependencies using dependency injection
+   - Test pure functions and business logic
+   - Use Result pattern validation
+
+2. **Integration Tests**: Real file system operations
+   - Use temp directories for file operations
+   - Test atomic write operations
+   - Verify caching behavior
+
+3. **Contract Tests**: External API compatibility
+   - Test GitHub CLI output parsing
+   - Test Ollama API response handling
+   - Validate data structure contracts
+
+4. **E2E Tests**: Full system verification
+   - Test against real OSS repositories (microsoft/vscode, sindresorhus/got)
+   - Verify resumability and idempotence
+   - Test with real Ollama and GitHub CLI
+
+5. **Performance Tests**: Scalability verification
+   - Test large repository handling
+   - Verify rate limiting compliance
+   - Test concurrency bounds
+
+**Test Commands:**
+```bash
+npm run test                    # Unit tests only
+npm run test:integration        # Integration tests
+npm run test:e2e               # End-to-end tests
+npm run test:e2e:real-world    # Real OSS repository tests
+npm run test:performance       # Performance and load tests
+npm run test:all               # All test suites
+```
 
 ### Linting and Formatting
 - Run `npm run lint` to check for linting issues (using oxlint for speed)
@@ -64,18 +105,45 @@ npm run dev sync
 
 # For development with auto-reload
 npm run dev:watch
+
+# Testing during development
+npm run test:watch             # Watch mode for unit tests
+npm run test:integration        # Run integration tests
+npm run test:e2e               # Run e2e tests (requires Ollama)
 ```
 
 ## Definition of Done
 
 Before considering a feature complete, ensure:
-1. All tests pass (`npm run test`)
-2. Linting passes (`npm run lint`)
-3. Type checking passes (`npm run typecheck`)
-4. Full CI pipeline passes (`npm run ci`)
-5. The feature is documented in the README (if user-facing)
-6. The feature follows the design document's architecture
-7. The implementation is simple and maintainable
+1. **Code Quality:**
+   - All unit tests pass (`npm run test`)
+   - Integration tests pass where applicable
+   - Linting passes (`npm run lint`)
+   - Type checking passes (`npm run typecheck`)
+   - Full CI pipeline passes (`npm run ci`)
+
+2. **Testing Coverage:**
+   - Unit tests for all pure functions
+   - Integration tests for file operations
+   - E2E tests for user-facing features
+   - Error scenarios tested (network failures, missing dependencies)
+
+3. **Documentation:**
+   - The feature is documented in the README (if user-facing)
+   - Code includes appropriate type annotations
+   - Complex logic has clear function signatures
+
+4. **Architecture Compliance:**
+   - The feature follows the design document's architecture
+   - Uses Result pattern for error handling
+   - Implements dependency injection where needed
+   - Follows functional programming principles
+
+5. **Maintainability:**
+   - The implementation is simple and maintainable
+   - No classes or inheritance used
+   - Pure functions where possible
+   - Clear separation of concerns
 
 ## License
 
