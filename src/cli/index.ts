@@ -8,6 +8,7 @@ import { join } from 'path';
 import { ConfigManager } from '../core/config.js';
 import { CodeExplorer } from '../core/explorer.js';
 import { SessionManager } from '../core/session.js';
+import { KnowledgeBrowser } from './knowledge-browser.js';
 
 // Get package.json for version
 const packagePath = join(__dirname, '../../package.json');
@@ -220,6 +221,23 @@ program
     }
   });
 
+// Knowledge browser command - explore stored knowledge
+program
+  .command('browse')
+  .alias('knowledge')
+  .description('Browse and search your knowledge base')
+  .option('-c, --config <path>', 'Configuration file path')
+  .action(async (options) => {
+    try {
+      const config = await ConfigManager.loadConfig(options.config);
+      const browser = new KnowledgeBrowser(config);
+      await browser.start();
+    } catch (error) {
+      console.error('❌ Knowledge browser failed:', error);
+      process.exit(1);
+    }
+  });
+
 // Status command - show current knowledge state
 program
   .command('status')
@@ -247,6 +265,7 @@ program
       
       console.log(chalk.bold('🎯 Quick Actions:'));
       console.log('• Run "ylog2" to start a new session');
+      console.log('• Run "ylog2 browse" to explore your knowledge base');
       console.log('• Run "ylog2 explore" to analyze your codebase');
       console.log('• Run "ylog2 resume <sessionId>" to continue a session');
       

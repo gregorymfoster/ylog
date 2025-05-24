@@ -14,6 +14,8 @@ import { SQLiteKnowledgeStorage } from './knowledge-storage.js'
 import { KnowledgeSynthesizer } from './knowledge-synthesis.js'
 import { KnowledgeSearchEngine } from './knowledge-search.js'
 import { AIProvider } from './ai.js'
+import { GamificationEngine } from './gamification.js'
+import { ConsoleProgressVisualizer } from '../utils/progress-visualizer.js'
 import {
   SessionContext,
   UserPreferences,
@@ -31,6 +33,11 @@ import {
   KnowledgeBase,
   SynthesisResult
 } from '../types/knowledge.js'
+import {
+  SessionStats,
+  SessionRewards,
+  UserProgress
+} from '../types/gamification.js'
 
 export class SessionManager {
   private config: ResolvedYlog2Config
@@ -42,6 +49,8 @@ export class SessionManager {
   private knowledgeSynthesizer: KnowledgeSynthesizer
   private knowledgeSearch: KnowledgeSearchEngine
   private aiProvider: AIProvider
+  private gamificationEngine: GamificationEngine
+  private progressVisualizer: ConsoleProgressVisualizer
   private sessionData: Map<string, any> = new Map()
   private sessionResponses: Array<{
     questionId: string
@@ -51,6 +60,17 @@ export class SessionManager {
     insights: string[]
     timestamp: Date
   }> = []
+  private sessionStartTime: Date = new Date()
+  private sessionStats: SessionStats = {
+    questionsAnswered: 0,
+    areasExplored: 0,
+    insightsGenerated: 0,
+    averageConfidence: 0,
+    timeSpent: 0,
+    streakDay: 1,
+    xpEarned: 0,
+    achievementsUnlocked: 0
+  }
 
   constructor(config: ResolvedYlog2Config) {
     this.config = config
@@ -66,6 +86,10 @@ export class SessionManager {
     )
     this.knowledgeSynthesizer = new KnowledgeSynthesizer(this.aiProvider)
     this.knowledgeSearch = new KnowledgeSearchEngine(this.knowledgeStorage, this.aiProvider)
+    
+    // Initialize gamification system
+    this.gamificationEngine = new GamificationEngine(config.outputDir)
+    this.progressVisualizer = new ConsoleProgressVisualizer()
     
     // Ensure data directory exists
     this.ensureDataDirectory()
@@ -127,6 +151,10 @@ export class SessionManager {
     sessionContext?: SessionContext
   ): Promise<void> {
     let context = sessionContext
+    this.sessionStartTime = new Date()
+    
+    // Load user progress and show welcome with gamification
+    const userProgress = await this.gamificationEngine.loadUserProgress()
     
     // Create new session if none provided
     if (!context) {
@@ -136,8 +164,16 @@ export class SessionManager {
     const interactive = new InteractiveSession(context)
     
     try {
-      // Show welcome and get user preferences
+      // Show welcome with progress
       interactive.showWelcome()
+      this.progressVisualizer.showLevelProgress(userProgress)
+      
+      // Show daily challenge
+      const dailyChallenge = await this.gamificationEngine.generateDailyChallenge()
+      this.progressVisualizer.showDailyChallenge(dailyChallenge)
+      
+      // Show motivational message
+      this.progressVisualizer.showMotivationalMessage(userProgress)
       
       if (!sessionContext) {
         // Get session preferences from user
@@ -168,14 +204,27 @@ export class SessionManager {
       // Main session loop
       await this.runSessionLoop(context, interactive)
       
-      // Show session summary
-      const sessionDuration = Date.now() - context.startTime.getTime()
-      interactive.showSessionSummary(
-        context.questionsAnswered,
-        sessionDuration / 1000,
-        context.areasExplored,
-        context.knowledgeProgress.insightsGenerated
-      )
+      // Calculate session rewards
+      this.sessionStats.timeSpent = Math.floor((Date.now() - this.sessionStartTime.getTime()) / 1000)
+      this.sessionStats.averageConfidence = this.calculateAverageConfidence()
+      
+      const rewards = await this.gamificationEngine.calculateSessionRewards(this.sessionStats)
+      
+      // Show enhanced session summary with gamification
+      this.progressVisualizer.showSessionSummary(this.sessionStats, rewards)
+      
+      // Show achievements unlocked
+      for (const achievement of rewards.achievementsUnlocked) {
+        this.progressVisualizer.showAchievementUnlocked(achievement)
+      }
+      
+      // Show updated progress
+      const updatedProgress = await this.gamificationEngine.loadUserProgress()
+      this.progressVisualizer.showLevelProgress(updatedProgress)
+      
+      // Show knowledge milestones
+      const milestones = this.gamificationEngine.getKnowledgeMilestones()
+      this.progressVisualizer.showKnowledgeMilestones(milestones)
       
       interactive.showGoodbye()
       
@@ -409,7 +458,8 @@ export class SessionManager {
     
     // Add area to explored list
     const areaPath = question.target.area.path
-    if (!context.areasExplored.includes(areaPath)) {
+    const isNewArea = !context.areasExplored.includes(areaPath)
+    if (isNewArea) {
       context.areasExplored.push(areaPath)
     }
     
@@ -424,6 +474,27 @@ export class SessionManager {
       context.knowledgeProgress.coveragePercentage = 
         (context.areasExplored.length / context.knowledgeProgress.totalAreas) * 100
     }
+    
+    // Update session stats for gamification
+    this.sessionStats.questionsAnswered++
+    if (isNewArea) {
+      this.sessionStats.areasExplored++
+    }
+  }
+
+  private calculateAverageConfidence(): number {
+    if (this.sessionResponses.length === 0) return 0
+    
+    // This would normally come from processed answers
+    // For now, simulate based on response quality
+    const confidenceSum = this.sessionResponses.reduce((sum, response) => {
+      // Simple heuristic: longer, more detailed responses get higher confidence
+      const responseLength = response.answer.length
+      const confidence = Math.min(0.5 + (responseLength / 200), 1.0)
+      return sum + confidence
+    }, 0)
+    
+    return confidenceSum / this.sessionResponses.length
   }
 
   /**
