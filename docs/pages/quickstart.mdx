@@ -1,0 +1,51 @@
+---
+title: 'Quick Start'
+description: 'Get up and running with ylog in 5 minutes'
+---
+
+import { Callout, Tabs, Steps } from 'nextra/components'
+
+# Quick Start
+
+Get ylog running in your repository in just a few minutes.
+
+<Steps>
+### Install ylog
+```bash
+npm install -g @graphite/ylog
+```
+
+### Initialize configuration
+```bash
+cd your-repository
+ylog init
+```
+
+### Configure authentication
+Set up your GitHub token:
+```bash
+export GITHUB_TOKEN=ghp_your_token_here
+```
+
+### Sync your PR history
+```bash
+ylog sync
+```
+</Steps>
+
+<Callout type="info">
+After the first sync, you'll find `.ylog` context files throughout your codebase with summaries of recent changes.
+</Callout>
+
+## What happens next?
+
+- Check the `.ylog` directory for your SQLite database
+- Look for `.ylog` files in your code directories  
+- Run `ylog show` to query your PR data
+- Set up automated syncing in CI/CD
+
+## Need help?
+
+- [Installation Guide](/installation) - Detailed installation instructions
+- [Authentication](/authentication/overview) - Setting up GitHub access
+- [Configuration](/configuration/overview) - Customizing ylog settings

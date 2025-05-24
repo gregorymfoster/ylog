@@ -1,0 +1,9 @@
+{
+  "index": "Introduction",
+  "quickstart": "Quick Start", 
+  "installation": "Installation",
+  "authentication": "Authentication",
+  "configuration": "Configuration",
+  "concepts": "Core Concepts",
+  "cli": "CLI Reference"
+}
