@@ -146,7 +146,7 @@ export class KnowledgeSearchEngine {
     items: Array<{ item: any, type: string }>
   ): Promise<SemanticSearchResult[]> {
     const prompt = `
-You are a knowledge retrieval system. Rank the following knowledge items by their relevance to the query.
+You are an intelligent knowledge retrieval system with deep reasoning capabilities. Analyze the query and rank the knowledge items by their semantic relevance and conceptual similarity.
 
 Query: "${query}"
 
@@ -157,11 +157,18 @@ ${i + 1}. [${item.type.toUpperCase()}] ${this.extractContent(item.item, item.typ
    Confidence: ${item.item.confidence || 'N/A'}
 `).join('\n')}
 
-For each item, provide:
-1. A relevance score (0.0 to 1.0)
-2. A brief explanation of why it's relevant (or not)
+Reason through each item step-by-step:
+1. Understand the intent and context behind the query
+2. Analyze how each knowledge item relates to that intent
+3. Consider both direct matches and conceptual connections
+4. Account for the type of knowledge (insight vs decision vs context)
+5. Weight higher-confidence items appropriately
 
-Rank by semantic similarity to the query intent, not just keyword matching.
+For each item, provide:
+1. A relevance score (0.0 to 1.0) based on semantic similarity and usefulness
+2. A brief explanation of your reasoning for the relevance score
+
+Focus on semantic similarity to the query intent and conceptual relevance, not just keyword matching.
 `
 
     try {

@@ -34,7 +34,7 @@ program
   .description('Initialize ylog2 interactive knowledge mining')
   .option('-f, --force', 'Overwrite existing configuration')
   .option('--provider <provider>', 'AI provider (ollama|anthropic)', 'ollama')
-  .option('--model <model>', 'AI model name', 'llama3.2')
+  .option('--model <model>', 'AI model name (e.g., deepseek-r1:32b, llama3.2)', 'deepseek-r1:32b')
   .option('--datadir <dir>', 'Data directory name', '.ylog2')
   .action(async (options) => {
     try {
@@ -79,8 +79,13 @@ program
       
       console.log(chalk.cyan('\n🎯 Next steps:'));
       console.log('1. Review ylog2.config.json and adjust settings as needed');
-      console.log('2. Run "ylog2" to start your first interactive session');
-      console.log('3. Answer questions about your codebase to build knowledge');
+      if (options.provider === 'ollama') {
+        console.log(`2. Ensure Ollama is running with ${options.model} model`);
+        console.log('   • Run: ollama pull deepseek-r1:32b (if not already installed)');
+        console.log('   • DeepSeek-R1 provides excellent reasoning for code analysis');
+      }
+      console.log('3. Run "ylog2" to start your first interactive session');
+      console.log('4. Answer questions about your codebase to build knowledge');
       
     } catch (error) {
       console.error('❌ Failed to initialize:', error);

@@ -129,34 +129,37 @@ ${context.relatedFiles.slice(0, 5).join('\n') || 'None identified'}`
    * System prompts for different question types
    */
   private getSystemPrompt(type: QuestionType): string {
-    const basePrompt = `You are an expert software engineer conducting a knowledge-gathering session. Your goal is to understand the "why" behind code decisions and capture institutional knowledge that would help future developers.
+    const basePrompt = `You are an expert software architect with deep reasoning capabilities conducting an interactive knowledge-gathering session. Your goal is to understand the "why" behind code decisions and capture institutional knowledge that would help future developers.
 
-Generate ONE focused question that would help understand the reasoning behind the code. The question should be:
+Analyze the provided code context step-by-step and reason about what knowledge gaps exist. Generate ONE focused, insightful question that would help understand the reasoning behind the code.
+
+The question should be:
 - Specific to the code context provided
-- Answerable by the developer who wrote or modified the code
-- Valuable for future developers to understand
-- Clear and concise
+- Answerable by the developer who wrote or modified the code  
+- Valuable for future developers to understand the decision-making process
+- Clear and concise, but thought-provoking
+- Designed to uncover implicit knowledge and reasoning
 
-Provide 3-4 multiple choice options plus an "Other" option. Make the options realistic and commonly considered alternatives.`
+Think through potential answers and provide 3-4 multiple choice options plus an "Other" option. Make the options realistic alternatives that a developer might have actually considered, based on your reasoning about the problem space.`
 
     switch (type) {
       case 'why':
-        return basePrompt + '\n\nFocus on understanding the fundamental reasoning behind the implementation approach.'
+        return basePrompt + '\n\nReason through the code to understand the fundamental logic behind the implementation approach. What problem was being solved, and why was this particular solution chosen?'
       
       case 'alternatives':
-        return basePrompt + '\n\nFocus on understanding what other approaches were considered and why this one was chosen.'
+        return basePrompt + '\n\nAnalyze the implementation and think about what other approaches could have been used. Focus on understanding the decision matrix that led to this choice over alternatives.'
       
       case 'tradeoffs':
-        return basePrompt + '\n\nFocus on understanding the compromises and trade-offs made in this implementation.'
+        return basePrompt + '\n\nExamine the implementation for compromises and trade-offs. What was gained and what was sacrificed? Consider performance, maintainability, complexity, and other factors.'
       
       case 'business':
-        return basePrompt + '\n\nFocus on understanding the business requirements or user needs that drove this implementation.'
+        return basePrompt + '\n\nConnect the technical implementation to business value. What user needs or business requirements drove this specific technical approach?'
       
       case 'performance':
-        return basePrompt + '\n\nFocus on understanding performance considerations and optimizations in this code.'
+        return basePrompt + '\n\nAnalyze the code for performance implications. What performance considerations influenced the design, and what optimizations were made or avoided?'
       
       case 'security':
-        return basePrompt + '\n\nFocus on understanding security considerations and threat mitigations in this code.'
+        return basePrompt + '\n\nExamine the code through a security lens. What security considerations influenced the implementation, and what threats were being mitigated?'
       
       default:
         return basePrompt

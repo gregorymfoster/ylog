@@ -94,11 +94,11 @@ export const DEFAULT_CONFIG: Omit<Ylog2Config, 'dataDir'> = {
   },
   ai: {
     provider: 'ollama',
-    model: 'llama3.2',
+    model: 'deepseek-r1:32b',
     endpoint: 'http://localhost:11434',
-    maxTokens: 500,
+    maxTokens: 4000,
     temperature: 0.3,
-    timeout: 30000
+    timeout: 60000
   },
   exploration: {
     maxDepth: 10,

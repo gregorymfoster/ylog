@@ -89,7 +89,7 @@ export class KnowledgeSynthesizer {
 
   private async extractInsights(context: SynthesisContext): Promise<KnowledgeInsight[]> {
     const prompt = `
-You are analyzing Q&A responses from a developer about their codebase. Extract technical insights, architectural learnings, and important discoveries.
+You are an expert software architect analyzing Q&A responses from a developer about their codebase. Use your deep reasoning capabilities to extract technical insights, architectural learnings, and important discoveries.
 
 Context:
 - Session: ${context.sessionId}
@@ -103,14 +103,17 @@ A: ${r.answer}
 Existing insights: ${r.insights.join('; ')}
 `).join('\n')}
 
-Extract insights that:
-1. Reveal WHY decisions were made
-2. Explain non-obvious technical choices
-3. Document important architectural patterns
-4. Capture business logic reasoning
-5. Identify potential improvements or risks
+Apply your reasoning to extract insights that:
+1. Reveal WHY decisions were made (not just what was implemented)
+2. Explain non-obvious technical choices and their implications
+3. Document important architectural patterns and their trade-offs
+4. Capture business logic reasoning and domain knowledge
+5. Identify potential improvements, risks, or technical debt
+6. Connect seemingly unrelated decisions to broader system design
 
-Focus on actionable knowledge that would help future developers understand the codebase better.
+Think step-by-step about each response and identify the deeper technical and architectural knowledge that would help future developers understand not just the code, but the reasoning behind it.
+
+Focus on actionable knowledge that demonstrates the thought process and decision-making patterns of the development team.
 `
 
     try {
@@ -141,7 +144,7 @@ Focus on actionable knowledge that would help future developers understand the c
 
   private async extractDecisions(context: SynthesisContext): Promise<ArchitecturalDecision[]> {
     const prompt = `
-Analyze the Q&A responses to identify architectural decisions that were made in this codebase.
+You are an experienced software architect analyzing Q&A responses to identify key architectural decisions. Use your reasoning skills to understand the decision-making process behind code implementations.
 
 Context:
 - Code files: ${context.codeContext.files.join(', ')}
@@ -150,14 +153,21 @@ Context:
 Q&A Data:
 ${context.responses.map(r => `Q: ${r.question}\nA: ${r.answer}`).join('\n\n')}
 
-Look for:
-1. Technology choices (frameworks, libraries, patterns)
-2. Design decisions (architecture, data structures, APIs)
-3. Trade-offs that were made
-4. Alternative approaches that were considered or rejected
-5. Constraints that influenced decisions
+Reason through the responses to identify architectural decisions by:
+1. Technology choices (frameworks, libraries, patterns) - analyze WHY these were chosen
+2. Design decisions (architecture, data structures, APIs) - understand the reasoning process
+3. Trade-offs that were made - identify what was sacrificed and what was gained
+4. Alternative approaches that were considered or rejected - understand the decision matrix
+5. Constraints that influenced decisions - technical, business, or resource limitations
+6. Long-term implications - how these decisions affect future development
 
-Only extract decisions that are clearly articulated with reasoning.
+Think step-by-step about each decision:
+- What problem was being solved?
+- What options were available?
+- What factors influenced the choice?
+- What are the implications?
+
+Only extract decisions that are clearly articulated with solid reasoning and evidence from the responses.
 `
 
     try {
