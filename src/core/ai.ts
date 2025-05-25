@@ -5,7 +5,7 @@
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { ollama } from 'ollama-ai-provider';
-import type { ResolvedYlogConfig } from '../types/config.js';
+import type { ResolvedYlogConfig, ResolvedYlog2Config } from '../types/config.js';
 import type { RawPR } from '../types/github.js';
 import type { AISummary } from '../types/database.js';
 
@@ -328,5 +328,92 @@ Keep responses concise and focus on information that would help future developer
       endpoint: provider === 'ollama' ? (endpoint || 'http://localhost:11434') : undefined,
       hasApiKey: !!(apiKey || process.env.ANTHROPIC_API_KEY),
     };
+  }
+}
+
+/**
+ * AIProvider for ylog2 - Interactive knowledge mining
+ */
+export class AIProvider {
+  private config: ResolvedYlog2Config
+
+  constructor(config: ResolvedYlog2Config) {
+    this.config = config
+  }
+
+  /**
+   * Get the configured AI model for ylog2
+   */
+  getModel() {
+    const { provider, model, apiKey } = this.config.ai
+    
+    switch (provider) {
+      case 'anthropic':
+        if (!apiKey && !process.env.ANTHROPIC_API_KEY) {
+          throw new Error('Anthropic API key required. Set in config or ANTHROPIC_API_KEY env var.')
+        }
+        return anthropic(model)
+        
+      case 'ollama':
+        return ollama(model)
+        
+      default:
+        throw new Error(`Unsupported AI provider: ${provider}`)
+    }
+  }
+
+  /**
+   * Test AI connection
+   */
+  async testConnection(): Promise<{
+    success: boolean
+    provider: string
+    model: string
+    error?: string
+  }> {
+    try {
+      const model = this.getModel()
+      
+      const result = await generateText({
+        model,
+        prompt: 'Respond with exactly: "AI connection successful"',
+        maxTokens: 10,
+      })
+
+      const success = result.text.includes('successful')
+      
+      return {
+        success,
+        provider: this.config.ai.provider,
+        model: this.config.ai.model,
+        error: success ? undefined : 'Unexpected response from AI model',
+      }
+    } catch (error) {
+      return {
+        success: false,
+        provider: this.config.ai.provider,
+        model: this.config.ai.model,
+        error: `Connection failed: ${error}`,
+      }
+    }
+  }
+
+  /**
+   * Get provider information
+   */
+  getProviderInfo(): {
+    provider: string
+    model: string
+    endpoint?: string
+    hasApiKey: boolean
+  } {
+    const { provider, model, apiKey, endpoint } = this.config.ai
+    
+    return {
+      provider,
+      model,
+      endpoint: provider === 'ollama' ? (endpoint || 'http://localhost:11434') : undefined,
+      hasApiKey: !!(apiKey || process.env.ANTHROPIC_API_KEY),
+    }
   }
 }

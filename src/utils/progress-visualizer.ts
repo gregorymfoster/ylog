@@ -74,11 +74,11 @@ export class ConsoleProgressVisualizer implements ProgressVisualizer {
     console.log(`• Base XP: ${chalk.green(`+${stats.questionsAnswered * 10}`)}`)
     
     if (rewards.qualityBonus) {
-      console.log(`• Quality bonus: ${chalk.green(`+${rewards.qualityBonus}`)} ${chalk.gray('(high confidence)')}`))
+      console.log(`• Quality bonus: ${chalk.green(`+${rewards.qualityBonus}`)} ${chalk.gray('(high confidence)')}`)
     }
     
     if (rewards.streakBonus) {
-      console.log(`• Streak bonus: ${chalk.green(`+${rewards.streakBonus}`)} ${chalk.gray(`(${stats.streakDay} day streak)`)}`))
+      console.log(`• Streak bonus: ${chalk.green(`+${rewards.streakBonus}`)} ${chalk.gray(`(${stats.streakDay} day streak)`)}`)
     }
     
     console.log(`• ${chalk.bold.green(`Total XP: +${rewards.xpGained}`)}`)

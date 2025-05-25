@@ -56,6 +56,9 @@ program
         ai: {
           provider: options.provider,
           model: options.model,
+          maxTokens: 4000,
+          temperature: 0.7,
+          timeout: 30000,
           ...(options.provider === 'anthropic' && {
             apiKey: process.env.ANTHROPIC_API_KEY || 'YOUR_ANTHROPIC_API_KEY'
           }),
