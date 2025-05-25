@@ -1,0 +1,22 @@
+{
+  "userId": "359ba6a5-fd6f-4968-af05-79b27c976d5a",
+  "level": 1,
+  "xp": 0,
+  "xpToNextLevel": 100,
+  "totalQuestions": 0,
+  "totalAreas": 0,
+  "totalInsights": 0,
+  "currentStreak": 0,
+  "longestStreak": 0,
+  "averageConfidence": 0,
+  "sessionsCompleted": 0,
+  "achievements": [],
+  "lastActiveDate": "2025-05-25T20:09:29.092Z",
+  "joinDate": "2025-05-25T20:09:29.092Z",
+  "stats": {
+    "questionsToday": 0,
+    "questionsThisWeek": 0,
+    "insightsThisWeek": 0,
+    "areasExploredThisWeek": 0
+  }
+}

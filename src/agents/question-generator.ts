@@ -6,6 +6,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { ollama } from 'ollama-ai-provider'
 import { AIPromptGenerator } from '../utils/ai-helpers.js'
+import { AIProvider } from '../core/ai.js'
 import {
   QuestionTarget,
   QuestionType,
@@ -20,11 +21,13 @@ import {
 export class QuestionGenerator {
   private config: ResolvedYlog2Config
   private promptGenerator: AIPromptGenerator
+  private aiProvider: AIProvider
   private questionCache: Map<string, Question> = new Map()
 
   constructor(config: ResolvedYlog2Config) {
     this.config = config
     this.promptGenerator = new AIPromptGenerator()
+    this.aiProvider = new AIProvider(config)
   }
 
   /**
@@ -84,7 +87,7 @@ export class QuestionGenerator {
     target: QuestionTarget, 
     questionType: QuestionType
   ): Promise<Question> {
-    const model = this.getAIModel()
+    const model = await this.aiProvider.getModelWithFallback()
     const prompt = this.promptGenerator.generateQuestionPrompt(target, questionType)
     
     try {
@@ -313,15 +316,8 @@ Generate one clear question with 3-4 multiple choice options (A, B, C, D) plus o
    */
   async testConnection(): Promise<boolean> {
     try {
-      const model = this.getAIModel()
-      
-      const result = await generateText({
-        model,
-        prompt: 'Respond with exactly: "Connected"',
-        maxTokens: 10
-      })
-      
-      return result.text.includes('Connected')
+      const result = await this.aiProvider.testConnection()
+      return result.success
     } catch {
       return false
     }

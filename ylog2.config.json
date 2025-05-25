@@ -1,0 +1,85 @@
+{
+  "dataDir": ".ylog2",
+  "storage": {
+    "strategy": "centralized",
+    "format": "json",
+    "compression": false,
+    "backup": true,
+    "maxHistoryDays": 365
+  },
+  "ai": {
+    "provider": "ollama",
+    "model": "deepseek-r1:32b",
+    "endpoint": "http://localhost:11434",
+    "maxTokens": 4000,
+    "temperature": 0.7,
+    "timeout": 30000
+  },
+  "exploration": {
+    "maxDepth": 10,
+    "ignorePatterns": [
+      "node_modules",
+      ".git",
+      "dist",
+      "build",
+      ".next",
+      "coverage",
+      ".nyc_output",
+      "logs"
+    ],
+    "focusAreas": [
+      "src",
+      "lib",
+      "app",
+      "components"
+    ],
+    "includeTests": false,
+    "minFileSize": 100,
+    "maxFileSize": 50000,
+    "supportedLanguages": [
+      "typescript",
+      "javascript",
+      "python",
+      "go",
+      "rust",
+      "java"
+    ]
+  },
+  "questions": {
+    "maxPerSession": 10,
+    "prioritize": [
+      "recent_changes",
+      "missing_context",
+      "complex_code"
+    ],
+    "questionTypes": [
+      "why",
+      "alternatives",
+      "tradeoffs",
+      "business"
+    ],
+    "adaptiveDifficulty": true,
+    "contextWindow": 1000,
+    "followUpProbability": 0.3
+  },
+  "synthesis": {
+    "updateInterval": "after_each_question",
+    "contextFileThreshold": 3,
+    "confidenceThreshold": 0.6,
+    "autoGenerate": true,
+    "includeMetrics": true
+  },
+  "session": {
+    "defaultLength": "medium",
+    "autoSave": true,
+    "resumeTimeout": 60,
+    "progressVisualization": true,
+    "gamification": {
+      "enabled": true,
+      "showProgress": true,
+      "showStreak": true,
+      "showImpact": true,
+      "celebrations": true
+    }
+  }
+}

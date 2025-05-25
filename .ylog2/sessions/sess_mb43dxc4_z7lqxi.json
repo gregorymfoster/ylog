@@ -1,0 +1,24 @@
+{
+  "sessionId": "sess_mb43dxc4_z7lqxi",
+  "startTime": "2025-05-25T20:09:29.092Z",
+  "questionsAnswered": 0,
+  "areasExplored": [],
+  "userPreferences": {
+    "sessionLength": "medium",
+    "questionTypes": [
+      "why",
+      "alternatives",
+      "tradeoffs",
+      "business"
+    ],
+    "focusAreas": [],
+    "skipPatterns": []
+  },
+  "knowledgeProgress": {
+    "totalAreas": 0,
+    "areasWithContext": 0,
+    "questionsAnswered": 0,
+    "insightsGenerated": 0,
+    "coveragePercentage": 0
+  }
+}

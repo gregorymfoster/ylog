@@ -118,7 +118,7 @@ Focus on actionable knowledge that demonstrates the thought process and decision
 
     try {
       const result = await generateObject({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         schema: z.object({
           insights: z.array(InsightSchema)
         }),
@@ -172,7 +172,7 @@ Only extract decisions that are clearly articulated with solid reasoning and evi
 
     try {
       const result = await generateObject({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         schema: z.object({
           decisions: z.array(DecisionSchema)
         }),
@@ -216,7 +216,7 @@ Extract the business "why" behind technical implementations.
 
     try {
       const result = await generateObject({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         schema: z.object({
           contexts: z.array(ContextSchema)
         }),
@@ -259,7 +259,7 @@ Extract patterns that would be useful for onboarding new developers.
 
     try {
       const result = await generateObject({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         schema: z.object({
           patterns: z.array(PatternSchema)
         }),
@@ -306,7 +306,7 @@ Provide cluster names and descriptions that clearly explain what each cluster re
 
     try {
       const result = await generateText({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         prompt
       })
 

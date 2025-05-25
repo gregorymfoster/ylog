@@ -355,11 +355,59 @@ export class AIProvider {
         return anthropic(model)
         
       case 'ollama':
-        return ollama(model)
+        return ollama(model, {
+          baseURL: this.config.ai.endpoint || 'http://localhost:11434',
+        })
         
       default:
         throw new Error(`Unsupported AI provider: ${provider}`)
     }
+  }
+
+  /**
+   * Get AI model with fallback to available models
+   */
+  async getModelWithFallback() {
+    const { provider, model } = this.config.ai
+    
+    if (provider === 'ollama') {
+      // Try the configured model first
+      try {
+        const testModel = this.getModel()
+        await generateText({
+          model: testModel,
+          prompt: 'test',
+          maxTokens: 1,
+        })
+        return testModel
+      } catch (error) {
+        console.warn(`Model ${model} not available, trying fallback models...`)
+        
+        // Try common fallback models
+        const fallbackModels = ['llama3.2', 'llama3.1', 'codellama', 'llama2']
+        
+        for (const fallback of fallbackModels) {
+          try {
+            const fallbackModel = ollama(fallback, {
+              baseURL: this.config.ai.endpoint || 'http://localhost:11434',
+            })
+            await generateText({
+              model: fallbackModel,
+              prompt: 'test',
+              maxTokens: 1,
+            })
+            console.log(`Using fallback model: ${fallback}`)
+            return fallbackModel
+          } catch (fallbackError) {
+            console.warn(`Fallback model ${fallback} also not available`)
+          }
+        }
+        
+        throw new Error(`No compatible models found. Please install a model with: ollama pull ${model}`)
+      }
+    }
+    
+    return this.getModel()
   }
 
   /**

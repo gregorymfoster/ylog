@@ -173,7 +173,7 @@ Focus on semantic similarity to the query intent and conceptual relevance, not j
 
     try {
       const result = await generateObject({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         schema: z.object({
           rankings: z.array(z.object({
             index: z.number(),
@@ -329,7 +329,7 @@ Focus on questions that would be valuable for developers working on this codebas
 
     try {
       const result = await generateText({
-        model: this.aiProvider.getModel(),
+        model: await this.aiProvider.getModelWithFallback(),
         prompt
       })
 

@@ -40,6 +40,12 @@ export class CodeExplorer {
 
     for (const startPath of startPaths) {
       try {
+        // Check if path exists before exploring
+        if (!existsSync(startPath)) {
+          console.warn(`Skipping non-existent path: ${startPath}`)
+          continue
+        }
+        
         const exploredAreas = await this.exploreDirectory(
           startPath, 
           0, 
@@ -272,6 +278,18 @@ export class CodeExplorer {
     priority: number
   ): Promise<QuestionTarget | null> {
     try {
+      // Check if path exists and is a file (not a directory)
+      if (!existsSync(filePath)) {
+        console.warn(`File does not exist: ${filePath}`)
+        return null
+      }
+      
+      const stat = statSync(filePath)
+      if (!stat.isFile()) {
+        console.warn(`Path is not a file: ${filePath}`)
+        return null
+      }
+      
       // Get file content (truncated)
       const fileArea = this.exploreCache.get(filePath) || await this.fileAnalyzer.analyzeFile(filePath)
       const fileContent = require('fs').readFileSync(filePath, 'utf-8')
